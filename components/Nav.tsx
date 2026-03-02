@@ -12,7 +12,7 @@ export default function Navbar() {
     { name: "Home", href: "/", icon: Home },
     { name: "Insights", href: "/insights", icon: BarChart3 },
     { name: "Membership", href: "/membership", icon: Layers },
-    { name: "Login", href: "/login", icon: LogIn },
+    { name: "Login", href: "/sign-in", icon: LogIn },
   ]
 
   return (
