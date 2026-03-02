@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Work_Sans } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Nav";
+import { AuthProvider } from "@/components/providers/auth-provider";
 
 const workSans = Work_Sans({
   subsets: ["latin"],
@@ -11,7 +12,8 @@ const workSans = Work_Sans({
 
 export const metadata: Metadata = {
   title: "Position Wise Advisory",
-  description: "Position Wise Advisory is your place to start investing smartly",
+  description:
+    "Position Wise Advisory is your place to start investing smartly",
 };
 
 export default function RootLayout({
@@ -22,8 +24,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={workSans.variable}>
       <body className="font-sans bg-background text-foreground transition-colors duration-300">
-        <Navbar/>
-        {children}
+        <AuthProvider>
+          <Navbar />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
