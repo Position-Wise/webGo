@@ -146,7 +146,7 @@ export default function Navbar() {
           {/* === AUTH ITEM === */}
           {user ? (
             <Link
-              href="/dashboard"
+              href="/profile"
               className="flex flex-col items-center text-xs"
             >
               <Avatar className="h-6 w-6">
@@ -163,7 +163,7 @@ export default function Navbar() {
               <span
                 className={cn(
                   "mt-1",
-                  pathname === "/dashboard"
+                  pathname === "/profile"
                     ? "text-accent"
                     : "text-muted-foreground",
                 )}
