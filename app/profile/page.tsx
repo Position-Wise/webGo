@@ -12,13 +12,25 @@ export default async function ProfilePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("tier, verified")
+    .select(`
+      role,
+      user_subscriptions (
+        status,
+        subscription_plans (
+          name
+        )
+      )
+    `)
     .eq("id", user.id)
     .single()
 
   const avatarUrl =
     user.user_metadata?.avatar_url ||
     user.user_metadata?.picture
+
+  const subscription = profile?.user_subscriptions?.[0]
+  const plan = subscription?.subscription_plans?.[0]?.name
+  const status = subscription?.status
 
   return (
     <div className="min-h-screen bg-background p-10">
@@ -55,14 +67,14 @@ export default async function ProfilePage() {
             <div className="flex justify-between border-b border-border pb-3">
               <span className="text-muted-foreground">Tier</span>
               <span className="font-medium capitalize">
-                {profile?.tier || "essential"}
+                {plan || "basic"}
               </span>
             </div>
 
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Verified</span>
+              <span className="text-muted-foreground">Status</span>
               <span className="font-medium">
-                {profile?.verified ? "Approved" : "Pending"}
+                {status === "active" ? "Approved" : "Pending"}
               </span>
             </div>
 

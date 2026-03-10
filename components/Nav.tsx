@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Home, BarChart3, Layers, LogIn, User } from "lucide-react";
+import { Home, BarChart3, Layers, LogIn, User, Lightbulb } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { supabase } from "@/lib/supabase/client";
 
@@ -19,13 +19,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
-  const navItems = [
+  const isAdmin =
+    !!user && !!profile && (profile.role ?? "").toLowerCase() === "admin";
+
+  const baseNavItems = [
     { name: "Home", href: "/", icon: Home },
     { name: "Insights", href: "/insights", icon: BarChart3 },
     { name: "Membership", href: "/membership", icon: Layers },
   ];
+
+  const authedNavItems = [
+    ...baseNavItems,
+    { name: "Tips", href: "/tips", icon: Lightbulb },
+    ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: User }] : []),
+  ];
+
+  const navItems = user ? authedNavItems : baseNavItems;
 
   return (
     <>
@@ -69,6 +80,16 @@ export default function Navbar() {
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent align="end">
+                  {isAdmin && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin">Admin</Link>
+                    </DropdownMenuItem>
+                  )}
+
+                  <DropdownMenuItem asChild>
+                    <Link href="/tips">Tips</Link>
+                  </DropdownMenuItem>
+
                   <DropdownMenuItem asChild>
                     <Link href="/dashboard">Dashboard</Link>
                   </DropdownMenuItem>
