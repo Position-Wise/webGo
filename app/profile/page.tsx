@@ -1,6 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 
+export const dynamic = "force-dynamic"
+
 export default async function ProfilePage() {
   const supabase = await createSupabaseServerClient()
 
@@ -11,19 +13,11 @@ export default async function ProfilePage() {
   if (!user) return null
 
   const { data: profile } = await supabase
-    .from("profiles")
-    .select(`
-      role,
-      user_subscriptions (
-        status,
-        subscription_plans (
-          name
-        )
-      )
-    `)
-    .eq("id", user.id)
-    .single()
-
+  .from("profiles")
+  .select("*")
+  .eq("id", user.id)
+  .maybeSingle()
+    
   const avatarUrl =
     user.user_metadata?.avatar_url ||
     user.user_metadata?.picture

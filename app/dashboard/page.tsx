@@ -1,5 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
+export const dynamic = "force-dynamic"
+
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient()
 
@@ -13,9 +15,21 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, tier, verified")
+    .select(`
+      role,
+      user_subscriptions (
+        status,
+        subscription_plans (
+          name
+        )
+      )
+    `)
     .eq("id", user.id)
     .single()
+
+  const subscription = (profile as any)?.user_subscriptions?.[0]
+  const plan = subscription?.subscription_plans?.[0]?.name ?? "basic"
+  const status = subscription?.status ?? null
 
   return (
     <div className="min-h-screen bg-background p-10">
@@ -33,12 +47,12 @@ export default async function DashboardPage() {
 
           <p>
             <span className="text-muted-foreground">Tier:</span>{" "}
-            {profile?.tier ?? "essential"}
+            {plan}
           </p>
 
           <p>
-            <span className="text-muted-foreground">Verified:</span>{" "}
-            {profile?.verified ? "Yes" : "Pending"}
+            <span className="text-muted-foreground">Status:</span>{" "}
+            {status === "active" ? "Active" : "Pending"}
           </p>
         </div>
 

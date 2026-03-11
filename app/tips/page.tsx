@@ -1,6 +1,16 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
+export const dynamic = "force-dynamic"
+
+function normalizePlanName(plan: string | null) {
+  const p = (plan ?? "").toLowerCase()
+  if (p === "elite") return "elite"
+  if (p === "growth") return "growth"
+  // treat anything else as basic/foundation
+  return "foundation"
+}
+
 export default async function TipsPage() {
   const supabase = await createSupabaseServerClient()
 
@@ -15,11 +25,21 @@ export default async function TipsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, tier")
+    .select(`
+      role,
+      user_subscriptions (
+        status,
+        subscription_plans (
+          name
+        )
+      )
+    `)
     .eq("id", user.id)
     .maybeSingle()
 
-  const tier = (profile?.tier as string | null) ?? "foundation"
+  const subscription = (profile as any)?.user_subscriptions?.[0]
+  const planName = subscription?.subscription_plans?.[0]?.name ?? null
+  const tier = normalizePlanName(planName)
 
   const canSeeGrowth = tier === "growth" || tier === "elite"
   const canSeeElite = tier === "elite"

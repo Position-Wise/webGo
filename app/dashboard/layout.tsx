@@ -2,6 +2,8 @@ import { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
+export const dynamic = "force-dynamic"
+
 interface DashboardLayoutProps {
   children: ReactNode
 }

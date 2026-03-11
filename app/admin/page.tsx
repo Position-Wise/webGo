@@ -3,22 +3,42 @@ import { updateUserAccess } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
+export const dynamic = "force-dynamic"
+
 type ProfileRow = {
   id: string
   full_name: string | null
-  email: string | null
-  tier: string | null
-  verified: boolean | null
+  role?: string | null
+  user_subscriptions?: {
+    status?: string | null
+    subscription_plans?: {
+      id?: string
+      name?: string | null
+    }[]
+  }[]
 }
 
-const TIERS = ["foundation", "growth", "elite"]
+const ROLES = ["user", "admin"]
+const PLANS = ["basic", "growth", "elite"]
+const STATUSES = ["pending", "active"]
 
 export default async function AdminPage() {
   const supabase = await createSupabaseServerClient()
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, full_name, email, tier, verified")
+    .select(`
+      id,
+      full_name,
+      role,
+      user_subscriptions (
+        status,
+        subscription_plans (
+          id,
+          name
+        )
+      )
+    `)
     .order("full_name", { ascending: true })
 
   return (
@@ -61,7 +81,10 @@ export default async function AdminPage() {
 }
 
 function UserRow({ profile }: { profile: ProfileRow }) {
-  const currentTier = (profile.tier ?? "foundation").toLowerCase()
+  const currentRole = (profile.role ?? "user").toLowerCase()
+  const subscription = profile.user_subscriptions?.[0]
+  const currentPlan = (subscription?.subscription_plans?.[0]?.name ?? "basic").toLowerCase() 
+  const currentStatus = (subscription?.status ?? "pending").toLowerCase()
 
   return (
     <form
@@ -75,39 +98,60 @@ function UserRow({ profile }: { profile: ProfileRow }) {
           {profile.full_name || "Unnamed member"}
         </p>
         <p className="text-xs text-muted-foreground">
-          {profile.email || "No email on record"}
+          {profile.id}
         </p>
       </div>
 
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground uppercase tracking-wide">
-          Tier
+          Role
         </label>
         <select
-          name="tier"
-          defaultValue={currentTier}
+          name="role"
+          defaultValue={currentRole}
           className="h-9 rounded-md border border-input bg-background px-2 text-sm"
         >
-          {TIERS.map((tier) => (
-            <option key={tier} value={tier}>
-              {tier.charAt(0).toUpperCase() + tier.slice(1)}
+          {ROLES.map((role) => (
+            <option key={role} value={role}>
+              {role.charAt(0).toUpperCase() + role.slice(1)}
             </option>
           ))}
         </select>
       </div>
 
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-          Verified
-        </label>
-        <div className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            name="verified"
-            defaultChecked={!!profile.verified}
-            className="h-4 w-4 rounded border border-input"
-          />
-          <span>{profile.verified ? "Yes" : "No"}</span>
+      <div className="grid gap-3 sm:grid-cols-2 md:contents">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground uppercase tracking-wide">
+            Plan
+          </label>
+          <select
+            name="plan"
+            defaultValue={currentPlan}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            {PLANS.map((plan) => (
+              <option key={plan} value={plan}>
+                {plan.charAt(0).toUpperCase() + plan.slice(1)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground uppercase tracking-wide">
+            Status
+          </label>
+          <select
+            name="status"
+            defaultValue={currentStatus}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            {STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
