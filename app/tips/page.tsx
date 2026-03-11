@@ -3,6 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const dynamic = "force-dynamic"
 
+type ProfileRow = {
+  role?: string | null
+  user_subscriptions?: {
+    status?: string | null
+    subscription_plans?: {
+      name?: string | null
+    }[]
+  }[]
+}
+
 function normalizePlanName(plan: string | null) {
   const p = (plan ?? "").toLowerCase()
   if (p === "elite") return "elite"
@@ -23,9 +33,7 @@ export default async function TipsPage() {
     return null
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select(`
+  const profileSelect = `
       role,
       user_subscriptions (
         status,
@@ -33,11 +41,23 @@ export default async function TipsPage() {
           name
         )
       )
-    `)
+    `
+
+  const { data: profileById } = await supabase
+    .from("profiles")
+    .select(profileSelect)
     .eq("id", user.id)
     .maybeSingle()
 
-  const subscription = (profile as any)?.user_subscriptions?.[0]
+  const profile = profileById ?? (
+    await supabase
+      .from("profiles")
+      .select(profileSelect)
+      .eq("user_id", user.id)
+      .maybeSingle()
+  ).data
+
+  const subscription = (profile as ProfileRow | null)?.user_subscriptions?.[0]
   const planName = subscription?.subscription_plans?.[0]?.name ?? null
   const tier = normalizePlanName(planName)
 
