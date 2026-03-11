@@ -4,7 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Home, BarChart3, Layers, LogIn, User, Lightbulb } from "lucide-react";
+import {
+  Home,
+  BarChart3,
+  Layers,
+  LogIn,
+  User,
+  Lightbulb,
+  LayoutDashboard,
+} from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { supabase } from "@/lib/supabase/client";
 
@@ -31,7 +39,10 @@ export default function Navbar() {
   ];
 
   const authedNavItems = [
-    ...baseNavItems,
+    { name: "Home", href: "/", icon: Home },
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Insights", href: "/insights", icon: BarChart3 },
+    { name: "Membership", href: "/membership", icon: Layers },
     { name: "Tips", href: "/tips", icon: Lightbulb },
     ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: User }] : []),
   ];

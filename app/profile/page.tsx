@@ -12,11 +12,19 @@ export default async function ProfilePage() {
 
   if (!user) return null
 
-  const { data: profile } = await supabase
-  .from("profiles")
-  .select("*")
-  .eq("id", user.id)
-  .maybeSingle()
+  const { data: profileById } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle()
+
+  const profile = profileById ?? (
+    await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle()
+  ).data
     
   const avatarUrl =
     user.user_metadata?.avatar_url ||

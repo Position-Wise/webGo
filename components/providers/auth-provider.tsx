@@ -10,6 +10,16 @@ type ProfileInfo = {
   status: string | null
 } | null
 
+type ProfileQueryRow = {
+  role?: string | null
+  user_subscriptions?: {
+    status?: string | null
+    subscription_plans?: {
+      name?: string | null
+    }[]
+  }[]
+}
+
 type AuthContextType = {
   user: User | null
   profile: ProfileInfo
@@ -21,6 +31,50 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
 })
+
+function toProfileInfo(profileRow: ProfileQueryRow | null): ProfileInfo {
+  if (!profileRow) return null
+
+  const subscription = profileRow.user_subscriptions?.[0]
+  const plan = subscription?.subscription_plans?.[0]?.name ?? null
+  const status = subscription?.status ?? null
+
+  return {
+    role: profileRow.role ?? null,
+    plan,
+    status,
+  }
+}
+
+async function fetchProfileRowForUser(userId: string) {
+  const profileSelect = `
+      role,
+      user_subscriptions (
+        status,
+        subscription_plans (
+          name
+        )
+      )
+    `
+
+  const { data: profileById } = await supabase
+    .from("profiles")
+    .select(profileSelect)
+    .eq("id", userId)
+    .maybeSingle()
+
+  if (profileById) {
+    return profileById as ProfileQueryRow
+  }
+
+  const { data: profileByUserId } = await supabase
+    .from("profiles")
+    .select(profileSelect)
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  return (profileByUserId as ProfileQueryRow | null) ?? null
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -46,35 +100,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSafeUser(nextUser)
 
       if (nextUser) {
-        const { data: profileRow } = await supabase
-          .from("profiles")
-          .select(
-            `
-            role,
-            user_subscriptions (
-              status,
-              subscription_plans (
-                name
-              )
-            )
-          `
-          )
-          .eq("id", nextUser.id)
-          .maybeSingle()
-
-        const subscription = (profileRow as any)?.user_subscriptions?.[0]
-        const plan = subscription?.subscription_plans?.[0]?.name ?? null
-        const status = subscription?.status ?? null
-
-        setSafeProfile(
-          profileRow
-            ? {
-                role: (profileRow as any).role ?? null,
-                plan,
-                status,
-              }
-            : null
-        )
+        const profileRow = await fetchProfileRowForUser(nextUser.id)
+        setSafeProfile(toProfileInfo(profileRow))
       } else {
         setSafeProfile(null)
       }
@@ -90,35 +117,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSafeUser(nextUser)
 
         if (nextUser) {
-          const { data: profileRow } = await supabase
-            .from("profiles")
-            .select(
-              `
-              role,
-              user_subscriptions (
-                status,
-                subscription_plans (
-                  name
-                )
-              )
-            `
-            )
-            .eq("id", nextUser.id)
-            .maybeSingle()
-
-          const subscription = (profileRow as any)?.user_subscriptions?.[0]
-          const plan = subscription?.subscription_plans?.[0]?.name ?? null
-          const status = subscription?.status ?? null
-
-          setSafeProfile(
-            profileRow
-              ? {
-                  role: (profileRow as any).role ?? null,
-                  plan,
-                  status,
-                }
-              : null
-          )
+          const profileRow = await fetchProfileRowForUser(nextUser.id)
+          setSafeProfile(toProfileInfo(profileRow))
         } else {
           setSafeProfile(null)
         }

@@ -1,166 +1,282 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server"
-import { updateUserAccess } from "./actions"
+import Link from "next/link"
+import { publishQuickUpdate } from "./actions"
+import {
+  BROADCAST_AUDIENCES,
+  BROADCAST_DURATIONS,
+  formatBroadcastDate,
+  getBroadcastAuthorName,
+  toAudienceLabel,
+  toDurationLabel,
+  toTitleCase,
+} from "./helpers"
+import { fetchAdminBroadcasts, fetchAdminProfiles } from "./queries"
+import { isSupabaseServiceRoleConfigured } from "@/lib/supabase/server"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 
 export const dynamic = "force-dynamic"
 
-type ProfileRow = {
-  id: string
-  full_name: string | null
-  role?: string | null
-  user_subscriptions?: {
-    status?: string | null
-    subscription_plans?: {
-      id?: string
-      name?: string | null
-    }[]
-  }[]
-}
-
-const ROLES = ["user", "admin"]
-const PLANS = ["basic", "growth", "elite"]
-const STATUSES = ["pending", "active"]
-
 export default async function AdminPage() {
-  const supabase = await createSupabaseServerClient()
+  const [profiles, broadcasts] = await Promise.all([
+    fetchAdminProfiles(),
+    fetchAdminBroadcasts(12),
+  ])
+  const hasServiceRole = isSupabaseServiceRoleConfigured()
+  const shouldShowPermissionHint = !hasServiceRole && profiles.length <= 1
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select(`
-      id,
-      full_name,
-      role,
-      user_subscriptions (
-        status,
-        subscription_plans (
-          id,
-          name
-        )
-      )
-    `)
-    .order("full_name", { ascending: true })
+  const totalMembers = profiles.length
+  const adminCount = profiles.filter(
+    (profile) => (profile.role ?? "").toLowerCase() === "admin"
+  ).length
+  const activeCount = profiles.filter((profile) => {
+    const status = (profile.user_subscriptions?.[0]?.status ?? "").toLowerCase()
+    return status === "active"
+  }).length
+  const pendingCount = profiles.filter((profile) => {
+    const status = (profile.user_subscriptions?.[0]?.status ?? "").toLowerCase()
+    return status !== "active"
+  }).length
+
+  const memberPreview = profiles.slice(0, 5)
+
+  const planBreakdown = profiles.reduce<Record<string, number>>((acc, profile) => {
+    const plan = (
+      profile.user_subscriptions?.[0]?.subscription_plans?.[0]?.name ?? "basic"
+    ).toLowerCase()
+    acc[plan] = (acc[plan] ?? 0) + 1
+    return acc
+  }, {})
 
   return (
-    <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
-      <section className="max-w-5xl mx-auto space-y-4">
-        <h1 className="text-3xl sm:text-4xl font-semibold">
-          Admin · Member Access
-        </h1>
-        <p className="text-sm sm:text-base text-muted-foreground max-w-2xl">
-          Review members, adjust their tier, and mark verification status.
-          This is a demo interface that assumes appropriate Supabase policies
-          are in place for admin writes.
-        </p>
+    <section className="space-y-6">
+      {shouldShowPermissionHint ? (
+        <div className="rounded-lg border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Admin data is permission-limited right now. Add
+          ` SUPABASE_SERVICE_ROLE_KEY ` in `.env` or verify your Supabase RLS
+          policies allow admin users to view all members.
+        </div>
+      ) : null}
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Total members" value={totalMembers} />
+        <MetricCard label="Active access" value={activeCount} />
+        <MetricCard label="Pending review" value={pendingCount} />
+        <MetricCard label="Admins" value={adminCount} />
       </section>
 
-      <section className="max-w-5xl mx-auto mt-10">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Members
+              Quick Update Message
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {!profiles?.length ? (
-              <p className="text-sm text-muted-foreground">
-                No profiles found yet.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {profiles.map((profile) => (
-                  <UserRow key={profile.id} profile={profile} />
-                ))}
+          <CardContent className="space-y-4">
+            <form action={publishQuickUpdate} className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Target audience
+                  </label>
+                  <select
+                    name="audience"
+                    defaultValue="all"
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    {BROADCAST_AUDIENCES.map((audience) => (
+                      <option key={audience} value={audience}>
+                        {toAudienceLabel(audience)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Title (optional)
+                  </label>
+                  <Input
+                    name="title"
+                    placeholder="Example: Weekly risk update"
+                    maxLength={120}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Display duration
+                  </label>
+                  <select
+                    name="duration"
+                    defaultValue="forever"
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    {BROADCAST_DURATIONS.map((duration) => (
+                      <option key={duration} value={duration}>
+                        {toDurationLabel(duration)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            )}
+
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Message
+                </label>
+                <textarea
+                  name="message"
+                  required
+                  rows={4}
+                  maxLength={1000}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  placeholder="Share quick update for members."
+                />
+              </div>
+
+              <Button type="submit" size="sm">
+                Post update
+              </Button>
+            </form>
+
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Latest broadcasts
+              </p>
+
+              {!broadcasts.length ? (
+                <p className="text-sm text-muted-foreground">
+                  No broadcast has been published yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {broadcasts.slice(0, 4).map((broadcast) => (
+                    <article
+                      key={broadcast.id}
+                      className="rounded-lg border border-border/70 bg-muted/30 p-4"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {toAudienceLabel(broadcast.audience)}
+                        </p>
+                        <span className="text-xs text-muted-foreground/70">
+                          {formatBroadcastDate(broadcast.created_at)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold">
+                        {broadcast.title || "Broadcast"}
+                      </p>
+                      <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+                        {broadcast.message}
+                      </p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Posted by {getBroadcastAuthorName(broadcast.profiles) || "Admin"}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/broadcast">Manage all broadcasts</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              User Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Plan distribution
+              </p>
+              {!Object.keys(planBreakdown).length ? (
+                <p className="text-sm text-muted-foreground">
+                  No member plans available.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(planBreakdown).map(([plan, count]) => (
+                    <div
+                      key={plan}
+                      className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2"
+                    >
+                      <p className="text-sm">
+                        {toTitleCase(plan)}
+                      </p>
+                      <p className="text-sm font-medium">
+                        {count}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Members preview (max 5)
+              </p>
+              {!memberPreview.length ? (
+                <p className="text-sm text-muted-foreground">
+                  No members found.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {memberPreview.map((profile) => {
+                    const status = (
+                      profile.user_subscriptions?.[0]?.status ?? "pending"
+                    ).toLowerCase()
+                    const plan = (
+                      profile.user_subscriptions?.[0]?.subscription_plans?.[0]?.name ??
+                      "basic"
+                    ).toLowerCase()
+
+                    return (
+                      <div
+                        key={profile.id}
+                        className="rounded-md border border-border/70 px-3 py-2"
+                      >
+                        <p className="text-sm font-medium">
+                          {profile.full_name || "Unnamed member"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {toTitleCase(plan)} - {toTitleCase(status)}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admin/users">Review users</Link>
+            </Button>
           </CardContent>
         </Card>
       </section>
-    </main>
+    </section>
   )
 }
 
-function UserRow({ profile }: { profile: ProfileRow }) {
-  const currentRole = (profile.role ?? "user").toLowerCase()
-  const subscription = profile.user_subscriptions?.[0]
-  const currentPlan = (subscription?.subscription_plans?.[0]?.name ?? "basic").toLowerCase() 
-  const currentStatus = (subscription?.status ?? "pending").toLowerCase()
-
+function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <form
-      action={updateUserAccess}
-      className="grid gap-3 items-center border border-border/60 rounded-lg px-4 py-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_auto]"
-    >
-      <input type="hidden" name="userId" value={profile.id} />
-
-      <div className="space-y-0.5">
-        <p className="text-sm font-medium">
-          {profile.full_name || "Unnamed member"}
+    <Card>
+      <CardContent className="pt-6">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          {label}
         </p>
-        <p className="text-xs text-muted-foreground">
-          {profile.id}
+        <p className="mt-2 text-3xl font-semibold">
+          {value}
         </p>
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-          Role
-        </label>
-        <select
-          name="role"
-          defaultValue={currentRole}
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-        >
-          {ROLES.map((role) => (
-            <option key={role} value={role}>
-              {role.charAt(0).toUpperCase() + role.slice(1)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 md:contents">
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground uppercase tracking-wide">
-            Plan
-          </label>
-          <select
-            name="plan"
-            defaultValue={currentPlan}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          >
-            {PLANS.map((plan) => (
-              <option key={plan} value={plan}>
-                {plan.charAt(0).toUpperCase() + plan.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground uppercase tracking-wide">
-            Status
-          </label>
-          <select
-            name="status"
-            defaultValue={currentStatus}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          >
-            {STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="justify-self-end">
-        <Button type="submit" size="sm">
-          Save
-        </Button>
-      </div>
-    </form>
+      </CardContent>
+    </Card>
   )
 }
-
