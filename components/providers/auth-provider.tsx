@@ -5,9 +5,9 @@ import { supabase } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
 
 type ProfileInfo = {
-  tier: string | null
-  verified: boolean | null
   role: string | null
+  plan: string | null
+  status: string | null
 } | null
 
 type AuthContextType = {
@@ -28,32 +28,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let isMounted = true
+
+    const setSafeUser = (u: User | null) => {
+      if (isMounted) setUser(u)
+    }
+    const setSafeProfile = (p: ProfileInfo) => {
+      if (isMounted) setProfile(p)
+    }
+    const setSafeLoading = (v: boolean) => {
+      if (isMounted) setLoading(v)
+    }
+
     const getSessionAndProfile = async () => {
       const { data } = await supabase.auth.getSession()
       const nextUser = data.session?.user ?? null
-      setUser(nextUser)
+      setSafeUser(nextUser)
 
       if (nextUser) {
         const { data: profileRow } = await supabase
           .from("profiles")
-          .select("tier, verified, role")
+          .select(
+            `
+            role,
+            user_subscriptions (
+              status,
+              subscription_plans (
+                name
+              )
+            )
+          `
+          )
           .eq("id", nextUser.id)
           .maybeSingle()
 
-        setProfile(
+        const subscription = (profileRow as any)?.user_subscriptions?.[0]
+        const plan = subscription?.subscription_plans?.[0]?.name ?? null
+        const status = subscription?.status ?? null
+
+        setSafeProfile(
           profileRow
             ? {
-                tier: (profileRow as any).tier ?? null,
-                verified: (profileRow as any).verified ?? null,
                 role: (profileRow as any).role ?? null,
+                plan,
+                status,
               }
             : null
         )
       } else {
-        setProfile(null)
+        setSafeProfile(null)
       }
 
-      setLoading(false)
+      setSafeLoading(false)
     }
 
     getSessionAndProfile()
@@ -61,31 +87,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         const nextUser = session?.user ?? null
-        setUser(nextUser)
+        setSafeUser(nextUser)
 
         if (nextUser) {
           const { data: profileRow } = await supabase
             .from("profiles")
-            .select("tier, verified, role")
+            .select(
+              `
+              role,
+              user_subscriptions (
+                status,
+                subscription_plans (
+                  name
+                )
+              )
+            `
+            )
             .eq("id", nextUser.id)
             .maybeSingle()
 
-          setProfile(
+          const subscription = (profileRow as any)?.user_subscriptions?.[0]
+          const plan = subscription?.subscription_plans?.[0]?.name ?? null
+          const status = subscription?.status ?? null
+
+          setSafeProfile(
             profileRow
               ? {
-                  tier: (profileRow as any).tier ?? null,
-                  verified: (profileRow as any).verified ?? null,
                   role: (profileRow as any).role ?? null,
+                  plan,
+                  status,
                 }
               : null
           )
         } else {
-          setProfile(null)
+          setSafeProfile(null)
         }
       }
     )
 
     return () => {
+      isMounted = false
       listener.subscription.unsubscribe()
     }
   }, [])
