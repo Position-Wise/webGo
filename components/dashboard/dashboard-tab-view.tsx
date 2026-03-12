@@ -11,6 +11,7 @@ export type DashboardBroadcast = {
   title: string | null
   message: string
   audience: string | null
+  broadcast_type?: "trade" | "investment" | "announcement" | null
   posted_by_name?: string | null
   created_at: string | null
 }
@@ -52,13 +53,19 @@ export default function DashboardTabView({
   const visibleBroadcasts = useMemo(() => {
     return broadcasts.filter((broadcast) => {
       const audience = (broadcast.audience ?? "all").toLowerCase()
-      return (
+      const matchesAudience =
         audience === "all" ||
         audience === activeTab ||
         audience === "basic" ||
         audience === "growth" ||
         audience === "elite"
-      )
+
+      if (!matchesAudience) return false
+
+      const broadcastType = (broadcast.broadcast_type ?? "investment").toLowerCase()
+      if (broadcastType === "announcement") return true
+      if (activeTab === "trade") return broadcastType === "trade"
+      return broadcastType === "investment"
     })
   }, [activeTab, broadcasts])
 

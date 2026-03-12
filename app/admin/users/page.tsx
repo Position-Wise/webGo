@@ -1,17 +1,75 @@
-import { updateUserAccess } from "../actions"
-import { ROLES, STATUSES, toTitleCase } from "../helpers"
+import type { ProfileRow } from "../types"
 import { fetchAdminProfiles, fetchAdminSubscriptionPlans } from "../queries"
-import { isSupabaseServiceRoleConfigured } from "@/lib/supabase/server"
-import { Button } from "@/components/ui/button"
+import UsersTableView from "./users-table-view"
+import {
+  createSupabaseServerClient,
+  createSupabaseServiceRoleClient,
+  isSupabaseServiceRoleConfigured,
+} from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const dynamic = "force-dynamic"
+
+function getStartOfWeekIso() {
+  const now = new Date()
+  const dayOfWeek = now.getUTCDay()
+  const mondayOffset = (dayOfWeek + 6) % 7
+  now.setUTCDate(now.getUTCDate() - mondayOffset)
+  now.setUTCHours(0, 0, 0, 0)
+  return now.toISOString()
+}
+
+async function fetchUsageByUser(profiles: ProfileRow[]) {
+  const userIds = profiles
+    .map((profile) => profile.id)
+    .filter((id): id is string => Boolean(id))
+
+  if (!userIds.length) return {} as Record<string, { tradesUsedThisWeek: number; broadcastsSeen: number }>
+
+  const db = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const startOfWeek = getStartOfWeekIso()
+  const { data, error } = await db
+    .from("trade_usage")
+    .select("user_id,broadcast_id,created_at")
+    .in("user_id", userIds)
+    .gte("created_at", startOfWeek)
+
+  if (error || !data?.length) {
+    return {} as Record<string, { tradesUsedThisWeek: number; broadcastsSeen: number }>
+  }
+
+  const usageByUser: Record<string, { tradesUsedThisWeek: number; broadcastsSeen: number }> = {}
+  const seenByUser: Record<string, Set<string>> = {}
+
+  for (const row of data as { user_id?: string | null; broadcast_id?: string | null }[]) {
+    const userId = row.user_id ?? ""
+    if (!userId) continue
+
+    if (!usageByUser[userId]) {
+      usageByUser[userId] = {
+        tradesUsedThisWeek: 0,
+        broadcastsSeen: 0,
+      }
+      seenByUser[userId] = new Set<string>()
+    }
+
+    usageByUser[userId].tradesUsedThisWeek += 1
+
+    if (row.broadcast_id) {
+      seenByUser[userId].add(row.broadcast_id)
+      usageByUser[userId].broadcastsSeen = seenByUser[userId].size
+    }
+  }
+
+  return usageByUser
+}
 
 export default async function AdminUsersPage() {
   const [profiles, plans] = await Promise.all([
     fetchAdminProfiles(),
     fetchAdminSubscriptionPlans(),
   ])
+  const usageByUser = await fetchUsageByUser(profiles)
   const hasServiceRole = isSupabaseServiceRoleConfigured()
   const shouldShowPermissionHint = !hasServiceRole && profiles.length <= 1
 
@@ -37,103 +95,7 @@ export default async function AdminUsersPage() {
               No profiles found yet.
             </p>
           ) : (
-            <div className="space-y-4">
-              {profiles.map((profile) => {
-                const currentRole = (profile.role ?? "user").toLowerCase()
-                const subscription = profile.user_subscriptions?.[0]
-                const currentPlanName = (
-                  subscription?.subscription_plans?.[0]?.name ?? "basic"
-                ).toLowerCase()
-                const selectedPlanId =
-                  plans.find((plan) => (plan.name ?? "").toLowerCase() === currentPlanName)?.id ??
-                  "__current__"
-                const currentStatus = (subscription?.status ?? "pending").toLowerCase()
-
-                return (
-                  <form
-                    key={profile.id}
-                    action={updateUserAccess}
-                    className="grid gap-3 items-center border border-border/60 rounded-lg px-4 py-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_auto]"
-                  >
-                    <input type="hidden" name="userId" value={profile.id} />
-                    <input type="hidden" name="currentPlanName" value={currentPlanName} />
-
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium">
-                        {profile.full_name || "Unnamed member"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {profile.id}
-                      </p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                        Role
-                      </label>
-                      <select
-                        name="role"
-                        defaultValue={currentRole}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                      >
-                        {ROLES.map((role) => (
-                          <option key={role} value={role}>
-                            {toTitleCase(role)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2 md:contents">
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Plan
-                        </label>
-                        <select
-                          name="planId"
-                          defaultValue={selectedPlanId}
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                          {selectedPlanId === "__current__" ? (
-                            <option value="__current__">
-                              {toTitleCase(currentPlanName)} (current)
-                            </option>
-                          ) : null}
-                          {plans.map((plan) => (
-                            <option key={plan.id} value={plan.id}>
-                              {plan.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Status
-                        </label>
-                        <select
-                          name="status"
-                          defaultValue={currentStatus}
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                          {STATUSES.map((status) => (
-                            <option key={status} value={status}>
-                              {toTitleCase(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="justify-self-end">
-                      <Button type="submit" size="sm">
-                        Save
-                      </Button>
-                    </div>
-                  </form>
-                )
-              })}
-            </div>
+            <UsersTableView profiles={profiles} plans={plans} usageByUser={usageByUser} />
           )}
         </CardContent>
       </Card>

@@ -8,6 +8,7 @@ import {
 import {
   BROADCAST_AUDIENCES,
   BROADCAST_DURATIONS,
+  BROADCAST_TYPES,
   ROLES,
   STATUSES,
 } from "./helpers"
@@ -16,6 +17,7 @@ import { resolveRoleForUser, type MinimalDbClient } from "./access"
 const ADMIN_ROUTES_TO_REVALIDATE = [
   "/admin",
   "/admin/broadcast",
+  "/admin/plans",
   "/admin/users",
   "/dashboard",
 ]
@@ -34,6 +36,14 @@ function normalizeDuration(value: string | null) {
     return normalized
   }
   return "forever"
+}
+
+function normalizeBroadcastType(value: string | null) {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (BROADCAST_TYPES.includes(normalized as (typeof BROADCAST_TYPES)[number])) {
+    return normalized
+  }
+  return "investment"
 }
 
 function calculateExpiration(duration: string) {
@@ -148,13 +158,22 @@ function revalidateAdminRoutes() {
 }
 
 export async function updateUserAccess(formData: FormData): Promise<void> {
+  console.log("updateUserAccess triggered", {formData})
+  
   const userId = formData.get("userId") as string | null
   const targetRole = normalizeRole(formData.get("role") as string | null)
   const status = normalizeStatus(formData.get("status") as string | null)
-  const requestedPlanIdRaw = ((formData.get("planId") as string | null) ?? "").trim()
-  const requestedPlanId = requestedPlanIdRaw && requestedPlanIdRaw !== "__current__"
-    ? requestedPlanIdRaw
-    : null
+
+  const requestedPlanIdRaw = (
+    ((formData.get("planId") as string | null) ??
+      (formData.get("plan") as string | null) ??
+      "")
+  ).trim()
+  const requestedPlanId =
+    requestedPlanIdRaw && requestedPlanIdRaw !== "__current__"
+      ? requestedPlanIdRaw
+      : null
+
   const currentPlanName = ((formData.get("currentPlanName") as string | null) ?? "basic")
     .trim()
     .toLowerCase()
@@ -167,71 +186,46 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
 
   const db = getPrivilegedClient(supabase)
 
-  await db
+  const { error: roleError } = await db
     .from("profiles")
     .update({ role: targetRole })
     .eq("id", userId)
 
+  if (roleError) {
+    console.error("Role update error:", roleError)
+  }
+
   let selectedPlanName: string | null = null
-  let selectedPlanId: string | null = null
 
   if (requestedPlanId) {
-    const { data: selectedPlanRow } = await db
+    const { data: planRow } = await db
       .from("subscription_plans")
       .select("id,name")
       .eq("id", requestedPlanId)
       .maybeSingle()
 
-    selectedPlanId = (selectedPlanRow as { id?: string } | null)?.id ?? null
-    selectedPlanName = (selectedPlanRow as { name?: string | null } | null)?.name ?? null
-  } else {
-    const legacyPlanName = ((formData.get("plan") as string | null) ?? "").trim()
-    if (legacyPlanName) {
-      const { data: selectedPlanRow } = await db
-        .from("subscription_plans")
-        .select("id,name")
-        .eq("name", legacyPlanName)
-        .maybeSingle()
-
-      selectedPlanId = (selectedPlanRow as { id?: string } | null)?.id ?? null
-      selectedPlanName = (selectedPlanRow as { name?: string | null } | null)?.name ?? null
-    }
+    selectedPlanName = (planRow as { name?: string | null } | null)?.name ?? null
   }
 
-  const { data: subscriptionRows } = await db
+  const subscriptionPayload: {
+    user_id: string
+    status: string
+    plan_id?: string
+  } = {
+    user_id: userId,
+    status,
+  }
+
+  if (requestedPlanId) {
+    subscriptionPayload.plan_id = requestedPlanId
+  }
+
+  await db
     .from("user_subscriptions")
-    .select("id")
-    .eq("user_id", userId)
-    .limit(1)
+    .upsert(subscriptionPayload, { onConflict: "user_id" })
 
-  const existingSubscriptionId =
-    ((subscriptionRows as { id?: string }[] | null)?.[0]?.id ?? null)
-
-  if (existingSubscriptionId) {
-    const updatePayload: {
-      status: string
-      plan_id?: string
-    } = { status }
-
-    if (selectedPlanId) {
-      updatePayload.plan_id = selectedPlanId
-    }
-
-    await db
-      .from("user_subscriptions")
-      .update(updatePayload)
-      .eq("id", existingSubscriptionId)
-  } else if (selectedPlanId) {
-    await db
-      .from("user_subscriptions")
-      .insert({
-        user_id: userId,
-        plan_id: selectedPlanId,
-        status,
-      })
-  }
-
-  const planForProfile = (selectedPlanName?.trim() || currentPlanName || "basic").toLowerCase()
+  const planForProfile =
+    (selectedPlanName?.trim() || currentPlanName || "basic").toLowerCase()
 
   await syncProfileTableAccess(db, userId, targetRole, planForProfile, status)
 
@@ -242,6 +236,9 @@ export async function publishBroadcast(formData: FormData): Promise<void> {
   const title = (formData.get("title") as string | null)?.trim() ?? ""
   const message = (formData.get("message") as string | null)?.trim() ?? ""
   const audience = normalizeAudience(formData.get("audience") as string | null)
+  const broadcastType = normalizeBroadcastType(
+    ((formData.get("broadcastType") as string | null) ?? "investment")
+  )
   const duration = normalizeDuration(formData.get("duration") as string | null)
 
   if (!message) return
@@ -253,24 +250,38 @@ export async function publishBroadcast(formData: FormData): Promise<void> {
   const db = getPrivilegedClient(supabase)
   const expiresAt = calculateExpiration(duration)
 
-  const { error } = await db.from("admin_broadcasts").insert({
+  const insertPayload = {
     title: title || null,
     message,
     audience,
+    broadcast_type: broadcastType,
     duration,
     expires_at: expiresAt?.toISOString() ?? null,
     created_by: userId,
-  })
+  }
 
-  // Backward compatibility when created_by column is not present yet.
+  const { error } = await db.from("admin_broadcasts").insert(insertPayload)
+
+  // Backward compatibility when created_by and/or broadcast_type are not present yet.
   if (error) {
-    await db.from("admin_broadcasts").insert({
+    const { error: fallbackError } = await db.from("admin_broadcasts").insert({
       title: title || null,
       message,
       audience,
+      broadcast_type: broadcastType,
       duration,
       expires_at: expiresAt?.toISOString() ?? null,
     })
+
+    if (fallbackError) {
+      await db.from("admin_broadcasts").insert({
+        title: title || null,
+        message,
+        audience,
+        duration,
+        expires_at: expiresAt?.toISOString() ?? null,
+      })
+    }
   }
 
   revalidateAdminRoutes()
@@ -282,7 +293,107 @@ export async function publishQuickUpdate(formData: FormData): Promise<void> {
   proxyFormData.set("title", (formData.get("title") as string | null) ?? "")
   proxyFormData.set("message", (formData.get("message") as string | null) ?? "")
   proxyFormData.set("audience", (formData.get("audience") as string | null) ?? "all")
+  proxyFormData.set(
+    "broadcastType",
+    (formData.get("broadcastType") as string | null) ?? "investment"
+  )
   proxyFormData.set("duration", (formData.get("duration") as string | null) ?? "forever")
 
   await publishBroadcast(proxyFormData)
+}
+
+function normalizeBoolean(value: string | null) {
+  return (value ?? "").toLowerCase() === "true"
+}
+
+function normalizeTradeLimit(value: string | null) {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized || normalized === "unlimited") return null
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.floor(parsed))
+}
+
+async function updatePlanPermissions(params: {
+  planId: string
+  allowTrade: boolean
+  allowInvestment: boolean
+  tradeLimitPerWeek: number | null
+  description?: string | null
+}) {
+  const { supabase, callerRole } = await getCallerRole()
+
+  if ((callerRole ?? "").toLowerCase() !== "admin") return
+
+  const db = getPrivilegedClient(supabase)
+  const updatePayload: Record<string, unknown> = {
+    allow_trade: params.allowTrade,
+    allow_investment: params.allowInvestment,
+    trade_limit_per_week: params.tradeLimitPerWeek,
+  }
+
+  if (typeof params.description === "string") {
+    updatePayload.description = params.description || null
+  }
+
+  const { error } = await db
+    .from("subscription_plans")
+    .update(updatePayload)
+    .eq("id", params.planId)
+
+  if (error) {
+    const { error: fallbackError } = await db
+      .from("subscription_plans")
+      .update({
+        allow_trade: params.allowTrade,
+        trade_limit_per_week: params.tradeLimitPerWeek,
+      })
+      .eq("id", params.planId)
+
+    if (fallbackError) {
+      console.error("Plan permission update error:", fallbackError)
+    }
+  }
+
+  revalidateAdminRoutes()
+}
+
+export async function updateSubscriptionPlanPermissions(formData: FormData): Promise<void> {
+  const planId = (formData.get("planId") as string | null)?.trim() ?? ""
+
+  if (!planId) return
+
+  const allowTrade = normalizeBoolean(formData.get("allowTrade") as string | null)
+  const allowInvestment = normalizeBoolean(formData.get("allowInvestment") as string | null)
+  const tradeLimitPerWeek = normalizeTradeLimit(formData.get("tradeLimitPerWeek") as string | null)
+
+  await updatePlanPermissions({
+    planId,
+    allowTrade,
+    allowInvestment,
+    tradeLimitPerWeek,
+  })
+}
+
+export async function updatePlan(formData: FormData): Promise<void> {
+  const planId = (formData.get("planId") as string | null)?.trim() ?? ""
+
+  if (!planId) return
+
+  const allowTrade = normalizeBoolean(formData.get("allowTrade") as string | null)
+  const allowInvestment = normalizeBoolean(formData.get("allowInvestment") as string | null)
+  const tradeLimitPerWeek = normalizeTradeLimit(
+    (formData.get("tradeLimit") as string | null) ??
+      (formData.get("tradeLimitPerWeek") as string | null)
+  )
+  const description = ((formData.get("description") as string | null) ?? "").trim()
+
+  await updatePlanPermissions({
+    planId,
+    allowTrade,
+    allowInvestment,
+    tradeLimitPerWeek,
+    description,
+  })
 }

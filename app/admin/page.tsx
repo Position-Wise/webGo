@@ -3,9 +3,11 @@ import { publishQuickUpdate } from "./actions"
 import {
   BROADCAST_AUDIENCES,
   BROADCAST_DURATIONS,
+  BROADCAST_TYPES,
   formatBroadcastDate,
   getBroadcastAuthorName,
   toAudienceLabel,
+  toBroadcastTypeLabel,
   toDurationLabel,
   toTitleCase,
 } from "./helpers"
@@ -74,7 +76,7 @@ export default async function AdminPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <form action={publishQuickUpdate} className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-4">
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">
                     Target audience
@@ -87,6 +89,23 @@ export default async function AdminPage() {
                     {BROADCAST_AUDIENCES.map((audience) => (
                       <option key={audience} value={audience}>
                         {toAudienceLabel(audience)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Broadcast type
+                  </label>
+                  <select
+                    name="broadcastType"
+                    defaultValue="investment"
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    {BROADCAST_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {toBroadcastTypeLabel(type)}
                       </option>
                     ))}
                   </select>
@@ -159,6 +178,9 @@ export default async function AdminPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           {toAudienceLabel(broadcast.audience)}
+                        </p>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground/80">
+                          {toBroadcastTypeLabel(broadcast.broadcast_type ?? null)}
                         </p>
                         <span className="text-xs text-muted-foreground/70">
                           {formatBroadcastDate(broadcast.created_at)}

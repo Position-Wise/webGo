@@ -10,6 +10,9 @@ add column if not exists expires_at timestamptz;
 alter table public.admin_broadcasts
 add column if not exists created_by uuid;
 
+alter table public.admin_broadcasts
+add column if not exists broadcast_type text default 'investment';
+
 do $$
 begin
   if not exists (
