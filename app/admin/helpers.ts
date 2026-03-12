@@ -10,6 +10,7 @@ export const BROADCAST_AUDIENCES = [
   "elite",
 ] as const
 export const BROADCAST_DURATIONS = ["24h", "week", "month", "forever"] as const
+export const BROADCAST_TYPES = ["trade", "investment", "announcement"] as const
 
 export function toAudienceLabel(audience: string | null) {
   const key = (audience ?? "all").toLowerCase()
@@ -43,6 +44,13 @@ export function toDurationLabel(duration: string | null) {
   if (normalized === "week") return "1 Week"
   if (normalized === "month") return "1 Month"
   return "Forever"
+}
+
+export function toBroadcastTypeLabel(type: string | null) {
+  const normalized = (type ?? "investment").toLowerCase()
+  if (normalized === "trade") return "Trade Signal"
+  if (normalized === "announcement") return "Announcement"
+  return "Investment"
 }
 
 export function getBroadcastAuthorName(profiles: unknown) {

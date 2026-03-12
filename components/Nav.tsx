@@ -39,10 +39,7 @@ export default function Navbar() {
   ];
 
   const authedNavItems = [
-    { name: "Home", href: "/", icon: Home },
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Insights", href: "/insights", icon: BarChart3 },
-    { name: "Membership", href: "/membership", icon: Layers },
     { name: "Tips", href: "/tips", icon: Lightbulb },
     ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: User }] : []),
   ];

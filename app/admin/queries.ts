@@ -28,6 +28,7 @@ function toProfileRowFromProfileTable(raw: Record<string, unknown>): ProfileRow 
   return {
     id,
     full_name: fullName,
+    email: toNullableString(raw.email),
     role,
     source_table: "profile",
     user_subscriptions: [
@@ -45,14 +46,13 @@ async function fetchProfilesFromProfilesTable(
   const { data } = await supabase
     .from("profiles")
     .select(`
-      id,
-      full_name,
-      role,
+      *,
       user_subscriptions (
-        status,
+        *,
         subscription_plans (
           id,
-          name
+          name,
+          description
         )
       )
     `)
@@ -116,6 +116,21 @@ export async function fetchAdminSubscriptionPlans() {
   })
 }
 
+export async function fetchAdminPlanSettings() {
+  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+
+  const { data } = await supabase
+    .from("subscription_plans")
+    .select("*")
+    .order("name", { ascending: true })
+
+  return ((data as SubscriptionPlanRow[] | null) ?? []).filter((plan) => {
+    const normalized = (plan.name ?? "").trim().toLowerCase()
+    if (!normalized) return false
+    return !normalized.includes("admin")
+  })
+}
+
 export async function fetchAdminBroadcasts(limit = 20) {
   const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
   const nowIso = new Date().toISOString()
@@ -124,6 +139,7 @@ export async function fetchAdminBroadcasts(limit = 20) {
       title,
       message,
       audience,
+      broadcast_type,
       created_by,
       duration,
       expires_at,
@@ -148,7 +164,6 @@ export async function fetchAdminBroadcasts(limit = 20) {
         title,
         message,
         audience,
-        created_by,
         duration,
         expires_at,
         created_at

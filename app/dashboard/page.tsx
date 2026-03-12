@@ -10,10 +10,20 @@ type ProfileRow = {
   role?: string | null
   user_subscriptions?: {
     status?: string | null
+    plan_id?: string | null
     subscription_plans?: {
+      id?: string
       name?: string | null
     }[]
   }[]
+}
+
+type PlanFeatureRow = {
+  id?: string
+  name?: string | null
+  allow_trade?: boolean | null
+  allow_investment?: boolean | null
+  trade_limit_per_week?: number | null
 }
 
 type BroadcastRow = {
@@ -21,6 +31,7 @@ type BroadcastRow = {
   title: string | null
   message: string
   audience: string | null
+  broadcast_type?: string | null
   created_by?: string | null
   profiles?:
     | {
@@ -32,6 +43,43 @@ type BroadcastRow = {
     | null
   expires_at?: string | null
   created_at: string | null
+}
+
+function normalizePlanName(value: string | null | undefined) {
+  const normalized = (value ?? "basic").toLowerCase()
+  if (normalized === "growth" || normalized === "elite") return normalized
+  return "basic"
+}
+
+function normalizeBroadcastType(
+  value: string | null | undefined
+): "trade" | "investment" | "announcement" {
+  const normalized = (value ?? "investment").toLowerCase()
+  if (normalized === "trade" || normalized === "announcement") return normalized
+  return "investment"
+}
+
+function getDefaultTradeAccess(planName: string) {
+  return planName === "growth" || planName === "elite"
+}
+
+function getDefaultInvestmentAccess() {
+  return true
+}
+
+function getDefaultTradeLimit(planName: string) {
+  if (planName === "growth") return 2
+  if (planName === "basic") return 0
+  return null
+}
+
+function getStartOfWeekIso() {
+  const now = new Date()
+  const dayOfWeek = now.getUTCDay()
+  const mondayOffset = (dayOfWeek + 6) % 7
+  now.setUTCDate(now.getUTCDate() - mondayOffset)
+  now.setUTCHours(0, 0, 0, 0)
+  return now.toISOString()
 }
 
 export default async function DashboardPage() {
@@ -49,7 +97,9 @@ export default async function DashboardPage() {
       role,
       user_subscriptions (
         status,
+        plan_id,
         subscription_plans (
+          id,
           name
         )
       )
@@ -70,13 +120,59 @@ export default async function DashboardPage() {
   ).data
 
   const subscription = (profile as ProfileRow | null)?.user_subscriptions?.[0]
-  const plan = subscription?.subscription_plans?.[0]?.name ?? "basic"
+  const fallbackPlanName = subscription?.subscription_plans?.[0]?.name ?? "basic"
+  const userPlanId =
+    subscription?.plan_id ??
+    (subscription?.subscription_plans?.[0]?.id
+      ? String(subscription.subscription_plans?.[0]?.id)
+      : null)
   const status = subscription?.status ?? null
-  const normalizedPlan = (() => {
-    const value = (plan ?? "basic").toLowerCase()
-    if (value === "growth" || value === "elite") return value
-    return "basic"
-  })()
+  let planRow: PlanFeatureRow | null = null
+
+  if (userPlanId) {
+    const { data } = await supabase
+      .from("subscription_plans")
+      .select("*")
+      .eq("id", userPlanId)
+      .maybeSingle()
+    planRow = (data as PlanFeatureRow | null) ?? null
+  }
+
+  if (!planRow) {
+    const { data } = await supabase
+      .from("subscription_plans")
+      .select("*")
+      .ilike("name", fallbackPlanName)
+      .maybeSingle()
+    planRow = (data as PlanFeatureRow | null) ?? null
+  }
+
+  const normalizedPlan = normalizePlanName(planRow?.name ?? fallbackPlanName)
+  const allowTrade =
+    typeof planRow?.allow_trade === "boolean"
+      ? planRow.allow_trade
+      : getDefaultTradeAccess(normalizedPlan)
+  const allowInvestment =
+    typeof planRow?.allow_investment === "boolean"
+      ? planRow.allow_investment
+      : getDefaultInvestmentAccess()
+  const tradeLimitPerWeek =
+    typeof planRow?.trade_limit_per_week === "number"
+      ? Math.max(0, Math.floor(planRow.trade_limit_per_week))
+      : getDefaultTradeLimit(normalizedPlan)
+
+  let hasReachedTradeLimit = false
+
+  if (allowTrade && typeof tradeLimitPerWeek === "number") {
+    const startOfWeek = getStartOfWeekIso()
+    const { count } = await supabase
+      .from("trade_usage")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .gte("created_at", startOfWeek)
+
+    hasReachedTradeLimit = (count ?? 0) >= tradeLimitPerWeek
+  }
 
   const nowIso = new Date().toISOString()
   const broadcastSelect = `
@@ -84,6 +180,7 @@ export default async function DashboardPage() {
       title,
       message,
       audience,
+      broadcast_type,
       created_by,
       expires_at,
       created_at,
@@ -108,7 +205,6 @@ export default async function DashboardPage() {
           title,
           message,
           audience,
-          created_by,
           expires_at,
           created_at
         `)
@@ -129,14 +225,25 @@ export default async function DashboardPage() {
       ) {
         return false
       }
+      const broadcastType = normalizeBroadcastType(row.broadcast_type)
+      if (broadcastType === "trade" && (!allowTrade || hasReachedTradeLimit)) {
+        return false
+      }
+      if (broadcastType === "investment" && !allowInvestment) {
+        return false
+      }
+
       if (!row.expires_at) return true
-      return row.expires_at > nowIso
+      if (row.expires_at <= nowIso) return false
+
+      return true
     })
     .map((row) => ({
       id: row.id,
       title: row.title,
       message: row.message,
       audience: row.audience,
+      broadcast_type: normalizeBroadcastType(row.broadcast_type),
       posted_by_name: getBroadcastAuthorName(row.profiles),
       created_at: row.created_at,
     }))
@@ -172,7 +279,7 @@ export default async function DashboardPage() {
               Membership tier
             </p>
             <p className="mt-1 text-sm font-medium capitalize">
-              {plan}
+              {planRow?.name ?? fallbackPlanName}
             </p>
           </div>
 
