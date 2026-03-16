@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { isAdminRole } from "@/lib/roles"
 import {
   getAccessStateFromStatus,
   normalizeSubscriptionStatus,
@@ -102,6 +103,34 @@ function getEmptyAccessState(user: User | null): CurrentUserAccessState {
     planId: null,
     planName: null,
     subscription: null,
+  }
+}
+
+function getAdminSubscriptionOverride(
+  subscription: CurrentUserSubscription | null
+): CurrentUserSubscription {
+  const currentPlan = subscription?.subscription_plans[0] ?? null
+  const currentPlanName = toNullableString(currentPlan?.name)?.toLowerCase() ?? null
+  const hasAdminPlan = currentPlanName === "admin"
+
+  return {
+    status: "active",
+    plan_id: hasAdminPlan ? subscription?.plan_id ?? currentPlan?.id ?? null : null,
+    payment_proof: subscription?.payment_proof ?? null,
+    submitted_at: subscription?.submitted_at ?? null,
+    started_at: subscription?.started_at ?? null,
+    ends_at: subscription?.ends_at ?? null,
+    current_period_start: subscription?.current_period_start ?? null,
+    current_period_end: subscription?.current_period_end ?? null,
+    created_at: subscription?.created_at ?? null,
+    updated_at: subscription?.updated_at ?? null,
+    subscription_plans: [
+      {
+        id: hasAdminPlan ? currentPlan?.id ?? subscription?.plan_id ?? null : null,
+        name: "admin",
+        description: currentPlan?.description ?? "Internal admin access",
+      },
+    ],
   }
 }
 
@@ -244,6 +273,20 @@ export async function getCurrentUserAccessState(
   ])
 
   const role = roleFromProfiles ?? toNullableString(legacyProfile?.role)
+
+  if (isAdminRole(role)) {
+    const adminSubscription = getAdminSubscriptionOverride(subscription)
+
+    return {
+      user,
+      role,
+      status: "active",
+      accessState: "approved",
+      planId: adminSubscription.plan_id,
+      planName: "admin",
+      subscription: adminSubscription,
+    }
+  }
 
   if (subscription) {
     const status = subscription.status

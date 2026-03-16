@@ -15,6 +15,7 @@ import {
   Clock3,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
+import { isAdminRole } from "@/lib/roles";
 import { supabase } from "@/lib/supabase/client";
 import {
   getAccessStateFromStatus,
@@ -49,7 +50,7 @@ export default function Navbar() {
         ? Clock3
         : Layers;
   const hasActiveAccess = accessState === "approved";
-  const isAdmin = !!user && !!profile && (profile.role ?? "").toLowerCase() === "admin";
+  const isAdmin = !!user && isAdminRole(profile?.role ?? null);
   const shouldHighlightMemberEntry =
     Boolean(user) && accessState === "new_user" && !isAdmin;
   const isAccountPage =

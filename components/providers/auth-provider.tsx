@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
+import { isAdminRole } from "@/lib/roles"
 import { normalizeSubscriptionStatus, type SubscriptionStatus } from "@/lib/subscription-status"
 import type { User } from "@supabase/supabase-js"
 
@@ -36,12 +37,15 @@ const AuthContext = createContext<AuthContextType>({
 function toProfileInfo(profileRow: ProfileQueryRow | null): ProfileInfo {
   if (!profileRow) return null
 
+  const role = profileRow.role ?? null
   const subscription = profileRow.user_subscriptions?.[0]
-  const plan = subscription?.subscription_plans?.[0]?.name ?? null
-  const status = normalizeSubscriptionStatus(subscription?.status ?? null)
+  const plan = isAdminRole(role) ? "admin" : subscription?.subscription_plans?.[0]?.name ?? null
+  const status = isAdminRole(role)
+    ? "active"
+    : normalizeSubscriptionStatus(subscription?.status ?? null)
 
   return {
-    role: profileRow.role ?? null,
+    role,
     plan,
     status,
   }
