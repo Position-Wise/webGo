@@ -3,6 +3,8 @@ import { Work_Sans } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Nav";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 const workSans = Work_Sans({
   subsets: ["latin"],
@@ -27,6 +29,8 @@ export default function RootLayout({
         <AuthProvider>
           <Navbar />
           {children}
+          <Analytics />
+          <SpeedInsights />
         </AuthProvider>
       </body>
     </html>
