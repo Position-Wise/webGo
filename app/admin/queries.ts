@@ -2,6 +2,7 @@ import {
   createSupabaseServerClient,
   createSupabaseServiceRoleClient,
 } from "@/lib/supabase/server"
+import { isAdminRole } from "@/lib/roles"
 import type { BroadcastRow, ProfileRow, SubscriptionPlanRow } from "./types"
 
 function toNullableString(value: unknown) {
@@ -38,6 +39,74 @@ function toProfileRowFromProfileTable(raw: Record<string, unknown>): ProfileRow 
       },
     ],
   }
+}
+
+function applyInternalMembershipOverride(profile: ProfileRow): ProfileRow {
+  if (!isAdminRole(profile.role ?? null)) {
+    return profile
+  }
+
+  const currentSubscription = profile.user_subscriptions?.[0]
+  const currentPlanName = toNullableString(
+    currentSubscription?.subscription_plans?.[0]?.name
+  )?.toLowerCase()
+  const hasAdminPlan = currentPlanName === "admin"
+  const overriddenSubscription = currentSubscription
+    ? {
+        ...currentSubscription,
+        status: "active",
+        plan_id: hasAdminPlan ? currentSubscription.plan_id ?? null : null,
+        subscription_plan_id: hasAdminPlan
+          ? currentSubscription.subscription_plan_id ?? null
+          : null,
+        subscription_plans: [
+          {
+            ...currentSubscription.subscription_plans?.[0],
+            id: hasAdminPlan
+              ? currentSubscription.subscription_plans?.[0]?.id ??
+                currentSubscription.plan_id ??
+                currentSubscription.subscription_plan_id ??
+                undefined
+              : undefined,
+            name: "admin",
+            description:
+              currentSubscription.subscription_plans?.[0]?.description ??
+              "Internal admin access",
+          },
+        ],
+      }
+    : {
+        status: "active",
+        plan_id: null,
+        subscription_plan_id: null,
+        payment_proof: null,
+        submitted_at: null,
+        started_at: null,
+        ends_at: null,
+        current_period_start: null,
+        current_period_end: null,
+        created_at: null,
+        updated_at: null,
+        subscription_plans: [
+          {
+            id: undefined,
+            name: "admin",
+            description: "Internal admin access",
+          },
+        ],
+      }
+
+  return {
+    ...profile,
+    user_subscriptions: [
+      overriddenSubscription,
+      ...(profile.user_subscriptions?.slice(1) ?? []),
+    ],
+  }
+}
+
+function applyProfileOverrides(profiles: ProfileRow[]) {
+  return profiles.map(applyInternalMembershipOverride)
 }
 
 async function fetchProfilesFromProfilesTable(
@@ -89,16 +158,16 @@ export async function fetchAdminProfiles() {
   const profilesTableRows = await fetchProfilesFromProfilesTable(supabase)
 
   if (profilesTableRows.length > 1) {
-    return profilesTableRows
+    return applyProfileOverrides(profilesTableRows)
   }
 
   const profileTableRows = await fetchProfilesFromProfileTable(supabase)
 
   if (profileTableRows.length) {
-    return profileTableRows
+    return applyProfileOverrides(profileTableRows)
   }
 
-  return profilesTableRows
+  return applyProfileOverrides(profilesTableRows)
 }
 
 export async function fetchAdminSubscriptionPlans() {

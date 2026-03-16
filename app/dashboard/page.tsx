@@ -1,9 +1,11 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { isAdminRole } from "@/lib/roles"
 import { getBroadcastAuthorName } from "@/app/admin/helpers"
 import DashboardTabView, {
   type DashboardBroadcast,
 } from "@/components/dashboard/dashboard-tab-view"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
+import { getAccessStateLabel } from "@/lib/subscription-status"
 
 export const dynamic = "force-dynamic"
 
@@ -35,13 +37,17 @@ type BroadcastRow = {
 }
 
 function normalizePlanName(value: string | null | undefined) {
-  const normalized = (value ?? "basic").toLowerCase()
+  const normalized = (value ?? "").trim().toLowerCase()
   if (normalized === "pro" || normalized === "growth") return "pro"
   if (normalized === "premium" || normalized === "elite") return "premium"
-  return "basic"
+  if (normalized === "master_admin") return "admin"
+  return normalized || "basic"
 }
 
 function getPlanAudienceKeys(planName: string) {
+  if (planName === "admin") {
+    return ["basic", "pro", "premium", "growth", "elite", "admin"]
+  }
   if (planName === "pro") return ["pro", "growth"]
   if (planName === "premium") return ["premium", "elite"]
   return [planName]
@@ -56,11 +62,11 @@ function normalizeBroadcastType(
 }
 
 function getDefaultTradeAccess(planName: string) {
-  return planName === "pro" || planName === "premium"
+  return planName === "pro" || planName === "premium" || planName === "admin"
 }
 
-function getDefaultInvestmentAccess() {
-  return true
+function getDefaultInvestmentAccess(planName: string) {
+  return planName !== "new"
 }
 
 function getDefaultTradeLimit(planName: string) {
@@ -87,9 +93,10 @@ export default async function DashboardPage() {
     return null // layout should already redirect
   }
 
-  const fallbackPlanName = access.planName ?? "basic"
+  const fallbackPlanName = normalizePlanName(
+    access.planName ?? (isAdminRole(access.role) ? "admin" : "basic")
+  )
   const userPlanId = access.planId
-  const status = access.status
   let planRow: PlanFeatureRow | null = null
 
   if (userPlanId) {
@@ -119,7 +126,7 @@ export default async function DashboardPage() {
   const allowInvestment =
     typeof planRow?.allow_investment === "boolean"
       ? planRow.allow_investment
-      : getDefaultInvestmentAccess()
+      : getDefaultInvestmentAccess(normalizedPlan)
   const tradeLimitPerWeek =
     typeof planRow?.trade_limit_per_week === "number"
       ? Math.max(0, Math.floor(planRow.trade_limit_per_week))
@@ -259,7 +266,7 @@ export default async function DashboardPage() {
               Access status
             </p>
             <p className="mt-1 text-sm font-medium">
-              {status === "active" ? "Approved" : "Pending Approval"}
+              {getAccessStateLabel(access.accessState)}
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { isAdminRole } from "@/lib/roles"
 import { resolveRoleForUser, type MinimalDbClient } from "./access"
 import AdminNav from "./_components/admin-nav"
 
@@ -22,13 +23,11 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   const role = await resolveRoleForUser(
-  user.id,
-  supabase as unknown as MinimalDbClient
-)
+    user.id,
+    supabase as unknown as MinimalDbClient
+  )
 
-console.log("ADMIN CHECK ROLE:", role)
-
-  if (role !== "admin") {
+  if (!isAdminRole(role)) {
     redirect("/")
   }
 

@@ -5,6 +5,7 @@ import {
   createSupabaseServerClient,
   createSupabaseServiceRoleClient,
 } from "@/lib/supabase/server"
+import { isAdminRole } from "@/lib/roles"
 import {
   BROADCAST_AUDIENCES,
   BROADCAST_DURATIONS,
@@ -188,7 +189,7 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
 
   const { supabase, callerRole } = await getCallerRole()
 
-  if ((callerRole ?? "").toLowerCase() !== "admin") return
+  if (!isAdminRole(callerRole)) return
 
   const db = getPrivilegedClient(supabase)
 
@@ -264,7 +265,7 @@ export async function publishBroadcast(formData: FormData): Promise<void> {
 
   const { supabase, callerRole, userId } = await getCallerRole()
 
-  if ((callerRole ?? "").toLowerCase() !== "admin" || !userId) return
+  if (!isAdminRole(callerRole) || !userId) return
 
   const db = getPrivilegedClient(supabase)
   const expiresAt = calculateExpiration(duration)
@@ -343,7 +344,7 @@ async function updatePlanPermissions(params: {
 }) {
   const { supabase, callerRole } = await getCallerRole()
 
-  if ((callerRole ?? "").toLowerCase() !== "admin") return
+  if (!isAdminRole(callerRole)) return
 
   const db = getPrivilegedClient(supabase)
   const updatePayload: Record<string, unknown> = {

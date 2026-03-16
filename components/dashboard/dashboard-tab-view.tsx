@@ -59,6 +59,7 @@ export default function DashboardTabView({
         audience === "basic" ||
         audience === "pro" ||
         audience === "premium" ||
+        audience === "admin" ||
         audience === "growth" ||
         audience === "elite"
 
