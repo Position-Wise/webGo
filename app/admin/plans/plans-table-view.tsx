@@ -29,7 +29,18 @@ type PlansTableViewProps = {
 }
 
 function getPlanName(plan: SubscriptionPlanRow) {
-  return (plan.name ?? "").trim().toLowerCase() || "basic"
+  const normalized = (plan.name ?? "").trim().toLowerCase()
+  if (normalized === "growth") return "pro"
+  if (normalized === "elite") return "premium"
+  return normalized || "basic"
+}
+
+function isSystemPlan(plan: SubscriptionPlanRow) {
+  const name = getPlanName(plan)
+  if (typeof plan.is_public === "boolean") {
+    return !plan.is_public
+  }
+  return name === "new" || name === "admin"
 }
 
 function getDescription(plan: SubscriptionPlanRow) {
@@ -37,21 +48,23 @@ function getDescription(plan: SubscriptionPlanRow) {
   if (fromDb) return fromDb
 
   const name = getPlanName(plan)
-  if (name === "basic") return "Investment alerts"
-  if (name === "growth" || name === "pro") return "Trade signals"
-  if (name === "elite") return "Full access"
+  if (name === "basic") return "Entry access for public onboarding"
+  if (name === "pro") return "Trade signals and active intelligence"
+  if (name === "premium") return "Full access and high-touch support"
+  if (name === "new") return "Assigned automatically on signup"
+  if (name === "admin") return "Internal admin access"
   return "Custom plan"
 }
 
 function getAllowTrade(plan: SubscriptionPlanRow) {
   if (typeof plan.allow_trade === "boolean") return plan.allow_trade
   const name = getPlanName(plan)
-  return name === "growth" || name === "pro" || name === "elite"
+  return name === "pro" || name === "premium" || name === "admin"
 }
 
 function getAllowInvestment(plan: SubscriptionPlanRow) {
   if (typeof plan.allow_investment === "boolean") return plan.allow_investment
-  return true
+  return getPlanName(plan) !== "new"
 }
 
 function getTradeLimit(plan: SubscriptionPlanRow) {
@@ -60,10 +73,14 @@ function getTradeLimit(plan: SubscriptionPlanRow) {
   }
 
   const name = getPlanName(plan)
-  if (name === "basic") return 0
-  if (name === "growth" || name === "pro") return 2
-  if (name === "elite") return 99
+  if (name === "basic" || name === "new") return 0
+  if (name === "pro") return 2
+  if (name === "premium" || name === "admin") return 99
   return 0
+}
+
+function getVisibilityLabel(plan: SubscriptionPlanRow) {
+  return isSystemPlan(plan) ? "System" : "Public"
 }
 
 function FeatureFlag({ enabled }: { enabled: boolean }) {
@@ -101,6 +118,9 @@ function PlanViewDrawer({ plan }: { plan: SubscriptionPlanRow }) {
         <div className="space-y-2 text-sm">
           <p>
             Plan: {toTitleCase(planName)}
+          </p>
+          <p>
+            Type: {getVisibilityLabel(plan)}
           </p>
           <p>
             Description: {description}
@@ -157,6 +177,13 @@ function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
               Plan Name
             </label>
             <Input value={toTitleCase(getPlanName(plan))} readOnly />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs uppercase tracking-wide text-muted-foreground">
+              Visibility
+            </label>
+            <Input value={getVisibilityLabel(plan)} readOnly />
           </div>
 
           <div className="space-y-1">
@@ -225,6 +252,9 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
             Plan
           </TableHead>
           <TableHead>
+            Type
+          </TableHead>
+          <TableHead>
             Description
           </TableHead>
           <TableHead>
@@ -246,6 +276,9 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
           <TableRow key={plan.id}>
             <TableCell className="font-medium">
               {toTitleCase(getPlanName(plan))}
+            </TableCell>
+            <TableCell>
+              {getVisibilityLabel(plan)}
             </TableCell>
             <TableCell className="max-w-[320px] whitespace-normal text-muted-foreground">
               {getDescription(plan)}

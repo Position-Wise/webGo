@@ -8,6 +8,9 @@ export type ProfileRow = {
     id?: string
     status?: string | null
     plan_id?: string | null
+    subscription_plan_id?: string | null
+    payment_proof?: string | null
+    submitted_at?: string | null
     started_at?: string | null
     ends_at?: string | null
     current_period_start?: string | null
@@ -27,6 +30,7 @@ export type SubscriptionPlanRow = {
   id: string
   name: string | null
   description?: string | null
+  is_public?: boolean | null
   allow_trade?: boolean | null
   allow_investment?: boolean | null
   trade_limit_per_week?: number | null

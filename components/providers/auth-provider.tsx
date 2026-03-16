@@ -2,12 +2,13 @@
 
 import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
+import { normalizeSubscriptionStatus, type SubscriptionStatus } from "@/lib/subscription-status"
 import type { User } from "@supabase/supabase-js"
 
 type ProfileInfo = {
   role: string | null
   plan: string | null
-  status: string | null
+  status: SubscriptionStatus
 } | null
 
 type ProfileQueryRow = {
@@ -37,7 +38,7 @@ function toProfileInfo(profileRow: ProfileQueryRow | null): ProfileInfo {
 
   const subscription = profileRow.user_subscriptions?.[0]
   const plan = subscription?.subscription_plans?.[0]?.name ?? null
-  const status = subscription?.status ?? null
+  const status = normalizeSubscriptionStatus(subscription?.status ?? null)
 
   return {
     role: profileRow.role ?? null,

@@ -1,38 +1,42 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import Link from "next/link"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { getCurrentUserAccessState } from "@/lib/subscription-access"
+import {
+  getAccessStateLabel,
+  getMemberHomePathForState,
+} from "@/lib/subscription-status"
 
 export const dynamic = "force-dynamic"
 
-export default async function ProfilePage() {
-  const supabase = await createSupabaseServerClient()
+function normalizePlanLabel(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (normalized === "growth") return "pro"
+  if (normalized === "elite") return "premium"
+  return normalized || null
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+export default async function ProfilePage() {
+  const access = await getCurrentUserAccessState()
+  const user = access.user
 
   if (!user) return null
 
-  const { data: profileById } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle()
-
-  const profile = profileById ?? (
-    await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle()
-  ).data
-    
   const avatarUrl =
     user.user_metadata?.avatar_url ||
     user.user_metadata?.picture
 
-  const subscription = profile?.user_subscriptions?.[0]
-  const plan = subscription?.subscription_plans?.[0]?.name
-  const status = subscription?.status
+  const plan = normalizePlanLabel(access.planName)
+  const proof = access.subscription?.payment_proof ?? null
+  const submittedAt = access.subscription?.submitted_at
+  const memberHomePath = getMemberHomePathForState(access.accessState)
+
+  const formattedSubmittedAt = submittedAt
+    ? new Date(submittedAt).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    })
+    : null
 
   return (
     <div className="min-h-screen bg-background p-10">
@@ -44,7 +48,6 @@ export default async function ProfilePage() {
 
         <div className="rounded-xl border border-border bg-card p-8 space-y-6">
 
-          {/* Avatar */}
           <div className="flex items-center gap-6">
             <Avatar className="h-20 w-20">
               <AvatarImage src={avatarUrl} />
@@ -63,25 +66,58 @@ export default async function ProfilePage() {
             </div>
           </div>
 
-          {/* Details */}
           <div className="grid gap-4 text-sm">
-
             <div className="flex justify-between border-b border-border pb-3">
               <span className="text-muted-foreground">Tier</span>
               <span className="font-medium capitalize">
-                {plan || "basic"}
+                {plan || "Not selected"}
               </span>
             </div>
 
-            <div className="flex justify-between">
+            <div className="flex justify-between border-b border-border pb-3">
               <span className="text-muted-foreground">Status</span>
               <span className="font-medium">
-                {status === "active" ? "Approved" : "Pending"}
+                {getAccessStateLabel(access.accessState)}
               </span>
             </div>
 
-          </div>
+            <div className="flex justify-between border-b border-border pb-3">
+              <span className="text-muted-foreground">Submitted</span>
+              <span className="font-medium">
+                {formattedSubmittedAt || "Not submitted"}
+              </span>
+            </div>
 
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Payment proof</span>
+              {proof ? (
+                <Link
+                  className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  href={proof}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  View proof
+                </Link>
+              ) : (
+                <span className="font-medium">
+                  Not uploaded
+                </span>
+              )}
+            </div>
+
+            <div className="pt-4">
+              <Button asChild>
+                <Link href={memberHomePath}>
+                  {access.accessState === "approved"
+                    ? "Go to dashboard"
+                    : access.accessState === "waiting"
+                      ? "View approval status"
+                      : "Complete subscription"}
+                </Link>
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

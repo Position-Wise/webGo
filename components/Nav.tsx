@@ -12,15 +12,21 @@ import {
   User,
   Lightbulb,
   LayoutDashboard,
+  Clock3,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { supabase } from "@/lib/supabase/client";
+import {
+  getAccessStateFromStatus,
+  getMemberHomePathForState,
+} from "@/lib/subscription-status";
 
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -28,10 +34,31 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 export default function Navbar() {
   const pathname = usePathname();
   const { user, profile } = useAuth();
-
-  const isAdmin =
-    !!user && !!profile && (profile.role ?? "").toLowerCase() === "admin";
-
+  const accessState = getAccessStateFromStatus(profile?.status ?? null);
+  const memberHomePath = getMemberHomePathForState(accessState);
+  const memberHomeLabel =
+    accessState === "approved"
+      ? "Dashboard"
+      : accessState === "waiting"
+        ? "Waiting"
+        : "Subscribe";
+  const memberHomeIcon =
+    accessState === "approved"
+      ? LayoutDashboard
+      : accessState === "waiting"
+        ? Clock3
+        : Layers;
+  const hasActiveAccess = accessState === "approved";
+  const isAdmin = !!user && !!profile && (profile.role ?? "").toLowerCase() === "admin";
+  const shouldHighlightMemberEntry =
+    Boolean(user) && accessState === "new_user" && !isAdmin;
+  const isAccountPage =
+    pathname === "/profile" ||
+    pathname === memberHomePath ||
+    (hasActiveAccess && pathname === "/tips") ||
+    (isAdmin && pathname.startsWith("/admin"));
+    
+    
   const baseNavItems = [
     { name: "Home", href: "/", icon: Home },
     { name: "Insights", href: "/insights", icon: BarChart3 },
@@ -39,8 +66,8 @@ export default function Navbar() {
   ];
 
   const authedNavItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Tips", href: "/tips", icon: Lightbulb },
+    { name: memberHomeLabel, href: memberHomePath, icon: memberHomeIcon },
+    ...(hasActiveAccess ? [{ name: "Tips", href: "/tips", icon: Lightbulb }] : []),
     ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: User }] : []),
   ];
 
@@ -61,8 +88,11 @@ export default function Navbar() {
                 key={item.name}
                 href={item.href}
                 className={cn(
-                  "transition-colors hover:text-accent",
+                  "relative inline-flex items-center gap-2 rounded-full px-3 py-1 transition-colors hover:text-accent",
                   pathname === item.href && "text-accent",
+                  shouldHighlightMemberEntry &&
+                    item.href === memberHomePath &&
+                    "animate-pulse bg-accent/12 text-accent shadow-sm shadow-accent/20",
                 )}
               >
                 {item.name}
@@ -94,12 +124,14 @@ export default function Navbar() {
                     </DropdownMenuItem>
                   )}
 
-                  <DropdownMenuItem asChild>
-                    <Link href="/tips">Tips</Link>
-                  </DropdownMenuItem>
+                  {hasActiveAccess && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/tips">Tips</Link>
+                    </DropdownMenuItem>
+                  )}
 
                   <DropdownMenuItem asChild>
-                    <Link href="/dashboard">Dashboard</Link>
+                    <Link href={memberHomePath}>{memberHomeLabel}</Link>
                   </DropdownMenuItem>
 
                   <DropdownMenuItem asChild>
@@ -147,26 +179,31 @@ export default function Navbar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
+            const isHighlighted = shouldHighlightMemberEntry && item.href === memberHomePath;
 
             return (
               <Link
                 key={item.name}
                 href={item.href}
-                className="flex flex-col items-center text-xs"
+                className={cn(
+                  "flex flex-col items-center rounded-2xl px-3 py-0.5 text-xs transition-colors",
+                  isHighlighted && "animate-pulse bg-accent/12",
+                )}
               >
                 <Icon
                   className={cn(
                     "w-5 h-5 transition-colors",
-                    isActive ? "text-accent" : "text-muted-foreground",
+                    isActive || isHighlighted ? "text-accent" : "text-muted-foreground",
                   )}
                 />
-                <span
-                  className={cn(
-                    "mt-1",
-                    isActive ? "text-accent" : "text-muted-foreground",
-                  )}
-                >
-                  {item.name}
+                <span className="mt-1 inline-flex items-center gap-1">
+                  <span
+                    className={cn(
+                      isActive || isHighlighted ? "text-accent" : "text-muted-foreground",
+                    )}
+                  >
+                    {item.name}
+                  </span>
                 </span>
               </Link>
             );
@@ -174,32 +211,73 @@ export default function Navbar() {
 
           {/* === AUTH ITEM === */}
           {user ? (
-            <Link
-              href="/profile"
-              className="flex flex-col items-center text-xs"
-            >
-              <Avatar className="h-6 w-6">
-                <AvatarImage
-                  src={
-                    user.user_metadata?.avatar_url ||
-                    user.user_metadata?.picture
-                  }
-                />
-                <AvatarFallback>
-                  {user.email?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <span
-                className={cn(
-                  "mt-1",
-                  pathname === "/profile"
-                    ? "text-accent"
-                    : "text-muted-foreground",
-                )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex flex-col items-center text-xs outline-none"
+                >
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage
+                      src={
+                        user.user_metadata?.avatar_url ||
+                        user.user_metadata?.picture
+                      }
+                    />
+                    <AvatarFallback>
+                      {user.email?.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span
+                    className={cn(
+                      "mt-1",
+                      isAccountPage
+                        ? "text-accent"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    Account
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent
+                align="end"
+                className="mb-2 min-w-40"
+                side="top"
+                sideOffset={10}
               >
-                Account
-              </span>
-            </Link>
+                <DropdownMenuItem asChild>
+                  <Link href={memberHomePath}>{memberHomeLabel}</Link>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem asChild>
+                  <Link href="/profile">Profile</Link>
+                </DropdownMenuItem>
+
+                {hasActiveAccess && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/tips">Tips</Link>
+                  </DropdownMenuItem>
+                )}
+
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin">Admin</Link>
+                  </DropdownMenuItem>
+                )}
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                  }}
+                >
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
             <Link
               href="/sign-in"
