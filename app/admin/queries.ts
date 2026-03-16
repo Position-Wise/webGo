@@ -106,13 +106,12 @@ export async function fetchAdminSubscriptionPlans() {
 
   const { data } = await supabase
     .from("subscription_plans")
-    .select("id,name")
+    .select("id,name,is_public")
     .order("name", { ascending: true })
 
   return ((data as SubscriptionPlanRow[] | null) ?? []).filter((plan) => {
     const normalized = (plan.name ?? "").trim().toLowerCase()
-    if (!normalized) return false
-    return !normalized.includes("admin")
+    return Boolean(normalized)
   })
 }
 
@@ -126,8 +125,7 @@ export async function fetchAdminPlanSettings() {
 
   return ((data as SubscriptionPlanRow[] | null) ?? []).filter((plan) => {
     const normalized = (plan.name ?? "").trim().toLowerCase()
-    if (!normalized) return false
-    return !normalized.includes("admin")
+    return Boolean(normalized)
   })
 }
 

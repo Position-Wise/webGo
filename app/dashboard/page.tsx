@@ -3,20 +3,9 @@ import { getBroadcastAuthorName } from "@/app/admin/helpers"
 import DashboardTabView, {
   type DashboardBroadcast,
 } from "@/components/dashboard/dashboard-tab-view"
+import { getCurrentUserAccessState } from "@/lib/subscription-access"
 
 export const dynamic = "force-dynamic"
-
-type ProfileRow = {
-  role?: string | null
-  user_subscriptions?: {
-    status?: string | null
-    plan_id?: string | null
-    subscription_plans?: {
-      id?: string
-      name?: string | null
-    }[]
-  }[]
-}
 
 type PlanFeatureRow = {
   id?: string
@@ -47,8 +36,15 @@ type BroadcastRow = {
 
 function normalizePlanName(value: string | null | undefined) {
   const normalized = (value ?? "basic").toLowerCase()
-  if (normalized === "growth" || normalized === "elite") return normalized
+  if (normalized === "pro" || normalized === "growth") return "pro"
+  if (normalized === "premium" || normalized === "elite") return "premium"
   return "basic"
+}
+
+function getPlanAudienceKeys(planName: string) {
+  if (planName === "pro") return ["pro", "growth"]
+  if (planName === "premium") return ["premium", "elite"]
+  return [planName]
 }
 
 function normalizeBroadcastType(
@@ -60,7 +56,7 @@ function normalizeBroadcastType(
 }
 
 function getDefaultTradeAccess(planName: string) {
-  return planName === "growth" || planName === "elite"
+  return planName === "pro" || planName === "premium"
 }
 
 function getDefaultInvestmentAccess() {
@@ -68,7 +64,7 @@ function getDefaultInvestmentAccess() {
 }
 
 function getDefaultTradeLimit(planName: string) {
-  if (planName === "growth") return 2
+  if (planName === "pro") return 2
   if (planName === "basic") return 0
   return null
 }
@@ -84,49 +80,16 @@ function getStartOfWeekIso() {
 
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const access = await getCurrentUserAccessState(supabase)
+  const user = access.user
 
   if (!user) {
     return null // layout should already redirect
   }
 
-  const profileSelect = `
-      role,
-      user_subscriptions (
-        status,
-        plan_id,
-        subscription_plans (
-          id,
-          name
-        )
-      )
-    `
-
-  const { data: profileById } = await supabase
-    .from("profiles")
-    .select(profileSelect)
-    .eq("id", user.id)
-    .maybeSingle()
-
-  const profile = profileById ?? (
-    await supabase
-      .from("profiles")
-      .select(profileSelect)
-      .eq("user_id", user.id)
-      .maybeSingle()
-  ).data
-
-  const subscription = (profile as ProfileRow | null)?.user_subscriptions?.[0]
-  const fallbackPlanName = subscription?.subscription_plans?.[0]?.name ?? "basic"
-  const userPlanId =
-    subscription?.plan_id ??
-    (subscription?.subscription_plans?.[0]?.id
-      ? String(subscription.subscription_plans?.[0]?.id)
-      : null)
-  const status = subscription?.status ?? null
+  const fallbackPlanName = access.planName ?? "basic"
+  const userPlanId = access.planId
+  const status = access.status
   let planRow: PlanFeatureRow | null = null
 
   if (userPlanId) {
@@ -148,6 +111,7 @@ export default async function DashboardPage() {
   }
 
   const normalizedPlan = normalizePlanName(planRow?.name ?? fallbackPlanName)
+  const audienceKeys = getPlanAudienceKeys(normalizedPlan)
   const allowTrade =
     typeof planRow?.allow_trade === "boolean"
       ? planRow.allow_trade
@@ -188,11 +152,18 @@ export default async function DashboardPage() {
         full_name
       )
     `
+  const audienceFilter = [
+    "audience.is.null",
+    "audience.eq.all",
+    "audience.eq.invest",
+    "audience.eq.trade",
+    ...audienceKeys.map((audience) => `audience.eq.${audience}`),
+  ].join(",")
 
   const { data: broadcastRowsWithMeta, error: broadcastRowsWithMetaError } = await supabase
     .from("admin_broadcasts")
     .select(broadcastSelect)
-    .or(`audience.is.null,audience.eq.all,audience.eq.${normalizedPlan},audience.eq.invest,audience.eq.trade`)
+    .or(audienceFilter)
     .order("created_at", { ascending: false })
     .limit(60)
 
@@ -221,7 +192,7 @@ export default async function DashboardPage() {
         audience !== "all" &&
         audience !== "invest" &&
         audience !== "trade" &&
-        audience !== normalizedPlan
+        !audienceKeys.includes(audience)
       ) {
         return false
       }
@@ -279,7 +250,7 @@ export default async function DashboardPage() {
               Membership tier
             </p>
             <p className="mt-1 text-sm font-medium capitalize">
-              {planRow?.name ?? fallbackPlanName}
+              {normalizedPlan}
             </p>
           </div>
 
@@ -288,7 +259,7 @@ export default async function DashboardPage() {
               Access status
             </p>
             <p className="mt-1 text-sm font-medium">
-              {status === "active" ? "Active" : "Pending"}
+              {status === "active" ? "Approved" : "Pending Approval"}
             </p>
           </div>
         </div>
@@ -300,3 +271,4 @@ export default async function DashboardPage() {
     </main>
   )
 }
+

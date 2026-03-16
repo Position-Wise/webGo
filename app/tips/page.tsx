@@ -1,68 +1,28 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getCurrentUserAccessState } from "@/lib/subscription-access"
 
 export const dynamic = "force-dynamic"
 
-type ProfileRow = {
-  role?: string | null
-  user_subscriptions?: {
-    status?: string | null
-    subscription_plans?: {
-      name?: string | null
-    }[]
-  }[]
-}
-
 function normalizePlanName(plan: string | null) {
-  const p = (plan ?? "").toLowerCase()
-  if (p === "elite") return "elite"
-  if (p === "growth") return "growth"
-  // treat anything else as basic/foundation
-  return "foundation"
+  const normalized = (plan ?? "").toLowerCase()
+  if (normalized === "premium" || normalized === "elite") return "premium"
+  if (normalized === "pro" || normalized === "growth") return "pro"
+  return "basic"
 }
 
 export default async function TipsPage() {
   const supabase = await createSupabaseServerClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const access = await getCurrentUserAccessState(supabase)
+  const user = access.user
 
   if (!user) {
-    // layout should already redirect, but keep a guard
     return null
   }
 
-  const profileSelect = `
-      role,
-      user_subscriptions (
-        status,
-        subscription_plans (
-          name
-        )
-      )
-    `
-
-  const { data: profileById } = await supabase
-    .from("profiles")
-    .select(profileSelect)
-    .eq("id", user.id)
-    .maybeSingle()
-
-  const profile = profileById ?? (
-    await supabase
-      .from("profiles")
-      .select(profileSelect)
-      .eq("user_id", user.id)
-      .maybeSingle()
-  ).data
-
-  const subscription = (profile as ProfileRow | null)?.user_subscriptions?.[0]
-  const planName = subscription?.subscription_plans?.[0]?.name ?? null
-  const tier = normalizePlanName(planName)
-
-  const canSeeGrowth = tier === "growth" || tier === "elite"
-  const canSeeElite = tier === "elite"
+  const tier = normalizePlanName(access.planName)
+  const canSeePro = tier === "pro" || tier === "premium"
+  const canSeePremium = tier === "premium"
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
@@ -84,60 +44,57 @@ export default async function TipsPage() {
       </section>
 
       <section className="max-w-5xl mx-auto mt-10 grid gap-6 md:grid-cols-3">
-        {/* Foundation tips */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Foundation: Core Discipline
+              Basic: Core Discipline
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>• Define a maximum portfolio drawdown you are willing to accept.</p>
-            <p>• Separate long-term allocations from short-term experiments.</p>
-            <p>• Review positions on a fixed schedule, not on headlines.</p>
+            <p>- Define a maximum portfolio drawdown you are willing to accept.</p>
+            <p>- Separate long-term allocations from short-term experiments.</p>
+            <p>- Review positions on a fixed schedule, not on headlines.</p>
           </CardContent>
         </Card>
 
-        {/* Growth tips (locked if below Growth) */}
-        <Card className={!canSeeGrowth ? "opacity-60" : ""}>
+        <Card className={!canSeePro ? "opacity-60" : ""}>
           <CardHeader>
             <CardTitle className="text-base">
-              Growth: Playbook Structuring
+              Pro: Playbook Structuring
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            {canSeeGrowth ? (
+            {canSeePro ? (
               <>
-                <p>• Map each strategy to clear regime conditions.</p>
-                <p>• Use risk buckets (core / satellite / opportunistic).</p>
-                <p>• Size entries by volatility, not comfort level.</p>
+                <p>- Map each strategy to clear regime conditions.</p>
+                <p>- Use risk buckets (core / satellite / opportunistic).</p>
+                <p>- Size entries by volatility, not comfort level.</p>
               </>
             ) : (
               <p>
-                Upgrade to the <span className="font-medium">Growth</span> tier
+                Upgrade to the <span className="font-medium">Pro</span> tier
                 to unlock structured strategy templates and risk buckets.
               </p>
             )}
           </CardContent>
         </Card>
 
-        {/* Elite tips (locked if below Elite) */}
-        <Card className={!canSeeElite ? "opacity-60" : ""}>
+        <Card className={!canSeePremium ? "opacity-60" : ""}>
           <CardHeader>
             <CardTitle className="text-base">
-              Elite: Institutional Overlay
+              Premium: Institutional Overlay
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            {canSeeElite ? (
+            {canSeePremium ? (
               <>
-                <p>• Align reporting with institutional-style risk committees.</p>
-                <p>• Run scenario analysis for funding and liquidity shocks.</p>
-                <p>• Maintain a live playbook for de-risking and re-risking.</p>
+                <p>- Align reporting with institutional-style risk committees.</p>
+                <p>- Run scenario analysis for funding and liquidity shocks.</p>
+                <p>- Maintain a live playbook for de-risking and re-risking.</p>
               </>
             ) : (
               <p>
-                Elite content demonstrates how deeper strategy, oversight, and
+                Premium content demonstrates how deeper strategy, oversight, and
                 committee-ready reporting can be layered onto your portfolio.
               </p>
             )}
@@ -147,4 +104,3 @@ export default async function TipsPage() {
     </main>
   )
 }
-

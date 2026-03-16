@@ -17,9 +17,14 @@ import { resolveRoleForUser, type MinimalDbClient } from "./access"
 const ADMIN_ROUTES_TO_REVALIDATE = [
   "/admin",
   "/admin/broadcast",
+  "/admin/subscriptions",
   "/admin/plans",
   "/admin/users",
+  "/subscribe",
+  "/waiting",
   "/dashboard",
+  "/tips",
+  "/profile",
 ]
 
 function normalizeAudience(value: string | null) {
@@ -95,8 +100,8 @@ async function syncProfileTableAccess(
   db: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   userId: string,
   targetRole: string,
-  plan: string,
-  status: string
+  plan: string | null,
+  status: string | null
 ) {
   const byIdQuery = await db
     .from("profile")
@@ -120,7 +125,7 @@ async function syncProfileTableAccess(
 
   if (!profileRow || !idColumn) return
 
-  const payload: Record<string, string> = {}
+  const payload: Record<string, string | null> = {}
 
   if (hasColumn(profileRow, "role")) payload.role = targetRole
   if (hasColumn(profileRow, "status")) payload.status = status
@@ -147,6 +152,9 @@ function normalizeRole(value: string | null) {
 
 function normalizeStatus(value: string | null) {
   const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized || normalized === "none" || normalized === "null") {
+    return null
+  }
   if (STATUSES.includes(normalized as (typeof STATUSES)[number])) {
     return normalized
   }
@@ -158,8 +166,6 @@ function revalidateAdminRoutes() {
 }
 
 export async function updateUserAccess(formData: FormData): Promise<void> {
-  console.log("updateUserAccess triggered", {formData})
-  
   const userId = formData.get("userId") as string | null
   const targetRole = normalizeRole(formData.get("role") as string | null)
   const status = normalizeStatus(formData.get("status") as string | null)
@@ -174,7 +180,7 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
       ? requestedPlanIdRaw
       : null
 
-  const currentPlanName = ((formData.get("currentPlanName") as string | null) ?? "basic")
+  const currentPlanName = ((formData.get("currentPlanName") as string | null) ?? "")
     .trim()
     .toLowerCase()
 
@@ -207,11 +213,7 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
     selectedPlanName = (planRow as { name?: string | null } | null)?.name ?? null
   }
 
-  const subscriptionPayload: {
-    user_id: string
-    status: string
-    plan_id?: string
-  } = {
+  const subscriptionPayload: Record<string, string | null> = {
     user_id: userId,
     status,
   }
@@ -220,12 +222,29 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
     subscriptionPayload.plan_id = requestedPlanId
   }
 
-  await db
+  let subscriptionWrite = await db
     .from("user_subscriptions")
     .upsert(subscriptionPayload, { onConflict: "user_id" })
 
-  const planForProfile =
-    (selectedPlanName?.trim() || currentPlanName || "basic").toLowerCase()
+  if (subscriptionWrite.error && requestedPlanId) {
+    subscriptionWrite = await db
+      .from("user_subscriptions")
+      .upsert(
+        {
+          user_id: userId,
+          status,
+          subscription_plan_id: requestedPlanId,
+        },
+        { onConflict: "user_id" }
+      )
+  }
+
+  if (subscriptionWrite.error) {
+    console.error("Subscription update error:", subscriptionWrite.error)
+  }
+
+  const rawPlanForProfile = selectedPlanName?.trim() || currentPlanName || null
+  const planForProfile = rawPlanForProfile ? rawPlanForProfile.toLowerCase() : null
 
   await syncProfileTableAccess(db, userId, targetRole, planForProfile, status)
 
@@ -397,3 +416,5 @@ export async function updatePlan(formData: FormData): Promise<void> {
     description,
   })
 }
+
+

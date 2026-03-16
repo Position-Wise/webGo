@@ -1,13 +1,13 @@
 export const ROLES = ["user", "admin"] as const
-export const PLANS = ["basic", "growth", "elite"] as const
-export const STATUSES = ["pending", "active"] as const
+export const PLANS = ["basic", "pro", "premium", "new", "admin"] as const
+export const STATUSES = ["pending", "active", "rejected"] as const
 export const BROADCAST_AUDIENCES = [
   "all",
   "invest",
   "trade",
   "basic",
-  "growth",
-  "elite",
+  "pro",
+  "premium",
 ] as const
 export const BROADCAST_DURATIONS = ["24h", "week", "month", "forever"] as const
 export const BROADCAST_TYPES = ["trade", "investment", "announcement"] as const
@@ -17,8 +17,8 @@ export function toAudienceLabel(audience: string | null) {
   if (key === "invest") return "Invest"
   if (key === "trade") return "Trade"
   if (key === "basic") return "Basic Members"
-  if (key === "growth") return "Growth Members"
-  if (key === "elite") return "Elite Members"
+  if (key === "pro" || key === "growth") return "Pro Members"
+  if (key === "premium" || key === "elite") return "Premium Members"
   return "All Members"
 }
 

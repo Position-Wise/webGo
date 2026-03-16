@@ -4,24 +4,17 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/providers/auth-provider";
+import { getPostLoginRedirectPathForStatus } from "@/lib/subscription-status";
 
 export default function SignInPage() {
   const router = useRouter();
+  const { user, profile, loading } = useAuth();
 
   useEffect(() => {
-    let isMounted = true;
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (!isMounted) return;
-      if (data.session) {
-        router.replace("/dashboard");
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [router]);
+    if (loading || !user) return;
+    router.replace(getPostLoginRedirectPathForStatus(profile?.status ?? null));
+  }, [loading, profile?.status, router, user]);
 
   const handleGoogleLogin = async () => {
     await supabase.auth.signInWithOAuth({

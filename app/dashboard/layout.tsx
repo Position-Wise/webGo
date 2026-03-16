@@ -1,6 +1,7 @@
 import { ReactNode } from "react"
 import { redirect } from "next/navigation"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { getCurrentUserAccessState } from "@/lib/subscription-access"
+import { getProtectedRouteRedirectPath } from "@/lib/subscription-status"
 
 export const dynamic = "force-dynamic"
 
@@ -11,11 +12,16 @@ interface DashboardLayoutProps {
 export default async function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
-  const supabase = await createSupabaseServerClient()
-  const { data } = await supabase.auth.getUser()
+  const access = await getCurrentUserAccessState()
 
-  if (!data.user) {
+  if (!access.user) {
     redirect("/sign-in")
+  }
+
+  const redirectPath = getProtectedRouteRedirectPath(access.status)
+
+  if (redirectPath) {
+    redirect(redirectPath)
   }
 
   return <>{children}</>

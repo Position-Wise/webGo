@@ -13,6 +13,10 @@ import {
 } from "./helpers"
 import { fetchAdminBroadcasts, fetchAdminProfiles } from "./queries"
 import { isSupabaseServiceRoleConfigured } from "@/lib/supabase/server"
+import {
+  getAccessStateFromStatus,
+  getAccessStateLabel,
+} from "@/lib/subscription-status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -28,23 +32,24 @@ export default async function AdminPage() {
   const shouldShowPermissionHint = !hasServiceRole && profiles.length <= 1
 
   const totalMembers = profiles.length
-  const adminCount = profiles.filter(
-    (profile) => (profile.role ?? "").toLowerCase() === "admin"
-  ).length
   const activeCount = profiles.filter((profile) => {
-    const status = (profile.user_subscriptions?.[0]?.status ?? "").toLowerCase()
-    return status === "active"
+    const status = profile.user_subscriptions?.[0]?.status ?? null
+    return getAccessStateFromStatus(status) === "approved"
   }).length
-  const pendingCount = profiles.filter((profile) => {
-    const status = (profile.user_subscriptions?.[0]?.status ?? "").toLowerCase()
-    return status !== "active"
+  const waitingCount = profiles.filter((profile) => {
+    const status = profile.user_subscriptions?.[0]?.status ?? null
+    return getAccessStateFromStatus(status) === "waiting"
+  }).length
+  const newUserCount = profiles.filter((profile) => {
+    const status = profile.user_subscriptions?.[0]?.status ?? null
+    return getAccessStateFromStatus(status) === "new_user"
   }).length
 
   const memberPreview = profiles.slice(0, 5)
 
   const planBreakdown = profiles.reduce<Record<string, number>>((acc, profile) => {
     const plan = (
-      profile.user_subscriptions?.[0]?.subscription_plans?.[0]?.name ?? "basic"
+      profile.user_subscriptions?.[0]?.subscription_plans?.[0]?.name ?? "unassigned"
     ).toLowerCase()
     acc[plan] = (acc[plan] ?? 0) + 1
     return acc
@@ -62,9 +67,9 @@ export default async function AdminPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Total members" value={totalMembers} />
+        <MetricCard label="New users" value={newUserCount} />
+        <MetricCard label="Pending review" value={waitingCount} />
         <MetricCard label="Active access" value={activeCount} />
-        <MetricCard label="Pending review" value={pendingCount} />
-        <MetricCard label="Admins" value={adminCount} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
@@ -252,12 +257,12 @@ export default async function AdminPage() {
               ) : (
                 <div className="space-y-2">
                   {memberPreview.map((profile) => {
-                    const status = (
-                      profile.user_subscriptions?.[0]?.status ?? "pending"
-                    ).toLowerCase()
+                    const status = getAccessStateLabel(
+                      getAccessStateFromStatus(profile.user_subscriptions?.[0]?.status ?? null)
+                    )
                     const plan = (
                       profile.user_subscriptions?.[0]?.subscription_plans?.[0]?.name ??
-                      "basic"
+                      "unassigned"
                     ).toLowerCase()
 
                     return (
@@ -269,7 +274,7 @@ export default async function AdminPage() {
                           {profile.full_name || "Unnamed member"}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {toTitleCase(plan)} - {toTitleCase(status)}
+                          {toTitleCase(plan)} - {status}
                         </p>
                       </div>
                     )
@@ -278,9 +283,14 @@ export default async function AdminPage() {
               )}
             </div>
 
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/users">Review users</Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/subscriptions">Review subscriptions</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/admin/users">Manage users</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </section>

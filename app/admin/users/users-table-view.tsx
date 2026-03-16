@@ -22,6 +22,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  getAccessStateFromStatus,
+  getAccessStateLabel,
+  normalizeSubscriptionStatus,
+} from "@/lib/subscription-status"
 
 type UsageStats = {
   tradesUsedThisWeek: number
@@ -34,18 +39,37 @@ type UsersTableViewProps = {
   usageByUser: Record<string, UsageStats>
 }
 
+const STATUS_FILTER_OPTIONS = [
+  { value: "new_user", label: "Not Submitted" },
+  { value: "waiting", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+] as const
+
 function getSubscription(profile: ProfileRow) {
   return profile.user_subscriptions?.[0] ?? null
 }
 
 function getPlanName(profile: ProfileRow) {
-  return (getSubscription(profile)?.subscription_plans?.[0]?.name ?? "basic")
+  const normalized = (getSubscription(profile)?.subscription_plans?.[0]?.name ?? "")
     .trim()
     .toLowerCase()
+
+  return normalized || null
+}
+
+function getStoredPlanId(profile: ProfileRow) {
+  const subscription = getSubscription(profile)
+  return subscription?.plan_id ?? subscription?.subscription_plan_id ?? null
 }
 
 function getPlanId(profile: ProfileRow, plans: SubscriptionPlanRow[]) {
+  const storedPlanId = getStoredPlanId(profile)
+  if (storedPlanId) return storedPlanId
+
   const normalizedPlanName = getPlanName(profile)
+  if (!normalizedPlanName) return "__current__"
+
   return (
     plans.find((plan) => (plan.name ?? "").trim().toLowerCase() === normalizedPlanName)?.id ??
     "__current__"
@@ -53,7 +77,15 @@ function getPlanId(profile: ProfileRow, plans: SubscriptionPlanRow[]) {
 }
 
 function getStatus(profile: ProfileRow) {
-  return (getSubscription(profile)?.status ?? "pending").trim().toLowerCase()
+  return normalizeSubscriptionStatus(getSubscription(profile)?.status ?? null)
+}
+
+function getStatusFormValue(profile: ProfileRow) {
+  return getStatus(profile) ?? "none"
+}
+
+function getStatusLabel(profile: ProfileRow) {
+  return getAccessStateLabel(getAccessStateFromStatus(getStatus(profile)))
 }
 
 function getSince(profile: ProfileRow) {
@@ -101,9 +133,9 @@ function UserEditDrawer({
   plans: SubscriptionPlanRow[]
   usage: UsageStats
 }) {
-  const currentPlanName = getPlanName(profile)
+  const currentPlanName = getPlanName(profile) ?? ""
   const selectedPlan = getPlanId(profile, plans)
-  const status = getStatus(profile)
+  const status = getStatusFormValue(profile)
   const role = (profile.role ?? "user").trim().toLowerCase()
 
   return (
@@ -155,7 +187,9 @@ function UserEditDrawer({
             >
               {selectedPlan === "__current__" ? (
                 <option value="__current__">
-                  {toTitleCase(currentPlanName)} (current)
+                  {currentPlanName
+                    ? `${toTitleCase(currentPlanName)} (current)`
+                    : "No plan selected"}
                 </option>
               ) : null}
               {plans.map((plan) => (
@@ -175,6 +209,7 @@ function UserEditDrawer({
               defaultValue={status}
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             >
+              <option value="none">Not Submitted</option>
               {STATUSES.map((item) => (
                 <option key={item} value={item}>
                   {toTitleCase(item)}
@@ -239,7 +274,6 @@ function UserViewDrawer({
   usage: UsageStats
 }) {
   const planName = getPlanName(profile)
-  const status = getStatus(profile)
   const since = getSince(profile)
   const endDate = getSubscriptionEnd(profile)
   const email = profile.email ?? "Unavailable"
@@ -276,10 +310,10 @@ function UserViewDrawer({
               Role: {toTitleCase((profile.role ?? "user").toLowerCase())}
             </p>
             <p>
-              Plan: {toTitleCase(planName)}
+              Plan: {planName ? toTitleCase(planName) : "Not selected"}
             </p>
             <p>
-              Status: {toTitleCase(status)}
+              Status: {getStatusLabel(profile)}
             </p>
           </section>
 
@@ -326,7 +360,7 @@ export default function UsersTableView({
 
     return profiles.filter((profile) => {
       const planName = getPlanName(profile)
-      const status = getStatus(profile)
+      const accessState = getAccessStateFromStatus(getStatus(profile))
       const email = (profile.email ?? "").toLowerCase()
       const fullName = (profile.full_name ?? "").toLowerCase()
       const profileId = profile.id.toLowerCase()
@@ -337,7 +371,7 @@ export default function UsersTableView({
         email.includes(normalizedSearch) ||
         profileId.includes(normalizedSearch)
       const matchesPlan = planFilter === "all" || planName === planFilter
-      const matchesStatus = statusFilter === "all" || status === statusFilter
+      const matchesStatus = statusFilter === "all" || accessState === statusFilter
 
       return matchesSearch && matchesPlan && matchesStatus
     })
@@ -375,9 +409,9 @@ export default function UsersTableView({
           className="h-9 rounded-md border border-input bg-background px-2 text-sm"
         >
           <option value="all">All statuses</option>
-          {STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {toTitleCase(status)}
+          {STATUS_FILTER_OPTIONS.map((status) => (
+            <option key={status.value} value={status.value}>
+              {status.label}
             </option>
           ))}
         </select>
@@ -415,7 +449,6 @@ export default function UsersTableView({
             {filteredProfiles.map((profile) => {
               const usage = getUsage(usageByUser, profile.id)
               const planName = getPlanName(profile)
-              const status = getStatus(profile)
               const since = getSince(profile)
               const endDate = getSubscriptionEnd(profile)
 
@@ -430,10 +463,10 @@ export default function UsersTableView({
                     </p>
                   </TableCell>
                   <TableCell>
-                    {toTitleCase(planName)}
+                    {planName ? toTitleCase(planName) : "Not selected"}
                   </TableCell>
                   <TableCell>
-                    {toTitleCase(status)}
+                    {getStatusLabel(profile)}
                   </TableCell>
                   <TableCell>
                     {formatDate(endDate)}
@@ -456,3 +489,4 @@ export default function UsersTableView({
     </div>
   )
 }
+
