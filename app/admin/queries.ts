@@ -42,54 +42,51 @@ function toProfileRowFromProfileTable(raw: Record<string, unknown>): ProfileRow 
 }
 
 function applyInternalMembershipOverride(profile: ProfileRow): ProfileRow {
+  // ✅ Always normalize subscriptions safely
+  const subscriptions = Array.isArray(profile.user_subscriptions)
+    ? profile.user_subscriptions
+    : []
+
+  // ✅ Always pick latest submission (important)
+  const latestSubscription =
+    subscriptions.length > 0
+      ? [...subscriptions].sort(
+          (a, b) =>
+            new Date(b.submitted_at ?? 0).getTime() -
+            new Date(a.submitted_at ?? 0).getTime()
+        )[0]
+      : null
+
+  // ✅ If NOT admin → just return clean latest subscription
   if (!isAdminRole(profile.role ?? null)) {
-    return profile
+    return {
+      ...profile,
+      user_subscriptions: latestSubscription ? [latestSubscription] : [],
+    }
   }
 
-  const currentSubscription = profile.user_subscriptions?.[0]
-  const currentPlanName = toNullableString(
-    currentSubscription?.subscription_plans?.[0]?.name
-  )?.toLowerCase()
-  const hasAdminPlan = currentPlanName === "admin"
-  const overriddenSubscription = currentSubscription
+  // ✅ Admin override (but KEEP payment_proof!)
+  const overriddenSubscription = latestSubscription
     ? {
-        ...currentSubscription,
+        ...latestSubscription,
         status: "active",
-        plan_id: hasAdminPlan ? currentSubscription.plan_id ?? null : null,
-        subscription_plan_id: hasAdminPlan
-          ? currentSubscription.subscription_plan_id ?? null
-          : null,
+        payment_proof: latestSubscription.payment_proof ?? null, // 🔥 IMPORTANT FIX
         subscription_plans: [
           {
-            ...currentSubscription.subscription_plans?.[0],
-            id: hasAdminPlan
-              ? currentSubscription.subscription_plans?.[0]?.id ??
-                currentSubscription.plan_id ??
-                currentSubscription.subscription_plan_id ??
-                undefined
-              : undefined,
+            ...latestSubscription.subscription_plans?.[0],
             name: "admin",
             description:
-              currentSubscription.subscription_plans?.[0]?.description ??
+              latestSubscription.subscription_plans?.[0]?.description ??
               "Internal admin access",
           },
         ],
       }
     : {
         status: "active",
-        plan_id: null,
-        subscription_plan_id: null,
         payment_proof: null,
         submitted_at: null,
-        started_at: null,
-        ends_at: null,
-        current_period_start: null,
-        current_period_end: null,
-        created_at: null,
-        updated_at: null,
         subscription_plans: [
           {
-            id: undefined,
             name: "admin",
             description: "Internal admin access",
           },
@@ -98,10 +95,7 @@ function applyInternalMembershipOverride(profile: ProfileRow): ProfileRow {
 
   return {
     ...profile,
-    user_subscriptions: [
-      overriddenSubscription,
-      ...(profile.user_subscriptions?.slice(1) ?? []),
-    ],
+    user_subscriptions: [overriddenSubscription],
   }
 }
 
@@ -113,19 +107,24 @@ async function fetchProfilesFromProfilesTable(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>
 ) {
   const { data } = await supabase
-    .from("profiles")
-    .select(`
-      *,
-      user_subscriptions (
-        *,
-        subscription_plans (
-          id,
-          name,
-          description
-        )
+  .from("profiles")
+  .select(`
+    *,
+    user_subscriptions!user_subscriptions_user_id_fkey (
+      id,
+      user_id,
+      status,
+      payment_proof,
+      submitted_at,
+      subscription_plan_id,
+      subscription_plans (
+        id,
+        name,
+        description
       )
-    `)
-    .order("full_name", { ascending: true })
+    )
+  `)
+  .order("full_name", { ascending: true })
 
   return ((data as ProfileRow[] | null) ?? []).map((row) => ({
     ...row,
@@ -157,7 +156,7 @@ export async function fetchAdminProfiles() {
 
   const profilesTableRows = await fetchProfilesFromProfilesTable(supabase)
 
-  if (profilesTableRows.length > 1) {
+  if (profilesTableRows.length > 0) {
     return applyProfileOverrides(profilesTableRows)
   }
 
