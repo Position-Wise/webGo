@@ -16,30 +16,34 @@ type SubscribeFormProps = {
   userId: string
   plans: SubscribePlan[]
   initialPlanId: string
-  initialPaymentProof: string | null
 }
 
 export default function SubscribeForm({
   userId,
   plans,
   initialPlanId,
-  initialPaymentProof,
 }: SubscribeFormProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [planId, setPlanId] = useState(initialPlanId || plans[0]?.id || "")
-  const [paymentProof, setPaymentProof] = useState(initialPaymentProof ?? "")
+  const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
 
+    if (!file) {
+      setError("Please upload payment proof.")
+      return
+    }
+
+    const formData = new FormData()
+    formData.append("planId", planId)
+    formData.append("payment_proof", file)
+
     startTransition(async () => {
-      const result = await submitSubscriptionRequest({
-        planId,
-        paymentProof,
-      })
+      const result = await submitSubscriptionRequest(formData)
 
       if (result.error) {
         setError(result.error)
@@ -53,16 +57,17 @@ export default function SubscribeForm({
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
-      <input name="userId" type="hidden" value={userId} />
+      <input type="hidden" name="userId" value={userId} />
 
       <div className="space-y-1">
         <label className="text-xs uppercase tracking-wide text-muted-foreground">
           Plan
         </label>
+
         <select
           className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          onChange={(event) => setPlanId(event.target.value)}
           value={planId}
+          onChange={(e) => setPlanId(e.target.value)}
         >
           {plans.map((plan) => (
             <option key={plan.id} value={plan.id}>
@@ -74,27 +79,28 @@ export default function SubscribeForm({
 
       <div className="space-y-1">
         <label className="text-xs uppercase tracking-wide text-muted-foreground">
-          Payment proof URL
+          Upload Payment Screenshot
         </label>
+
         <Input
-          onChange={(event) => setPaymentProof(event.target.value)}
-          placeholder="https://..."
+          type="file"
+          accept="image/*"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
           required
-          type="url"
-          value={paymentProof}
         />
+
         <p className="text-xs text-muted-foreground">
-          Paste a public image or file link for your payment screenshot.
+          Upload the screenshot of your payment confirmation.
         </p>
       </div>
 
-      {error ? (
+      {error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </div>
-      ) : null}
+      )}
 
-      <Button disabled={isPending || !planId || !paymentProof.trim()} type="submit">
+      <Button disabled={isPending || !planId || !file} type="submit">
         {isPending ? "Submitting..." : "Submit for review"}
       </Button>
     </form>

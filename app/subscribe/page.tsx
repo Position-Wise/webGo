@@ -1,35 +1,35 @@
-import Link from "next/link"
-import { redirect } from "next/navigation"
-import SubscribeForm from "@/components/subscribe/subscribe-form"
-import { Button } from "@/components/ui/button"
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import SubscribeForm from "@/components/subscribe/subscribe-form";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { getCurrentUserAccessState } from "@/lib/subscription-access"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+} from "@/components/ui/card";
+import { getCurrentUserAccessState } from "@/lib/subscription-access";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic";
 
 type PlanRow = {
-  id: string
-  name: string | null
-  description?: string | null
-  is_public?: boolean | null
-}
+  id: string;
+  name: string | null;
+  description?: string | null;
+  is_public?: boolean | null;
+};
 
-const PLAN_ORDER = ["basic", "pro", "premium"] as const
+const PLAN_ORDER = ["basic", "pro", "premium"] as const;
 
 const PLAN_COPY: Record<
   string,
   {
-    title: string
-    price: string
-    summary: string
-    features: string[]
+    title: string;
+    price: string;
+    summary: string;
+    features: string[];
   }
 > = {
   basic: {
@@ -45,7 +45,8 @@ const PLAN_COPY: Record<
   pro: {
     title: "Pro",
     price: "$49 / month",
-    summary: "The main operating tier for active intelligence and trade access.",
+    summary:
+      "The main operating tier for active intelligence and trade access.",
     features: [
       "Full intelligence library",
       "Quarterly strategy calls",
@@ -62,81 +63,77 @@ const PLAN_COPY: Record<
       "Institutional-style reporting pack",
     ],
   },
-}
+};
 
 function normalizePlanKey(value: string | null | undefined) {
-  const normalized = (value ?? "").trim().toLowerCase()
-  if (normalized === "pro" || normalized === "growth") return "pro"
-  if (normalized === "premium" || normalized === "elite") return "premium"
-  return "basic"
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === "pro" || normalized === "growth") return "pro";
+  if (normalized === "premium" || normalized === "elite") return "premium";
+  return "basic";
 }
 
 function sortPlans(plans: PlanRow[]) {
   return [...plans].sort((left, right) => {
-    const leftIndex = PLAN_ORDER.indexOf(normalizePlanKey(left.name))
-    const rightIndex = PLAN_ORDER.indexOf(normalizePlanKey(right.name))
-    return leftIndex - rightIndex
-  })
+    const leftIndex = PLAN_ORDER.indexOf(normalizePlanKey(left.name));
+    const rightIndex = PLAN_ORDER.indexOf(normalizePlanKey(right.name));
+    return leftIndex - rightIndex;
+  });
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return null
+  if (!value) return null;
 
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
 
   return parsed.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
-  })
+  });
 }
 
 export default async function SubscribePage() {
-  const access = await getCurrentUserAccessState()
+  const access = await getCurrentUserAccessState();
 
   if (!access.user) {
-    redirect("/sign-in")
+    redirect("/sign-in");
   }
 
   if (access.accessState === "approved") {
-    redirect("/dashboard")
+    redirect("/dashboard");
   }
 
-  if (access.accessState === "waiting") {
-    redirect("/waiting")
-  }
-
-  const db = await createSupabaseServerClient()
+  const db = await createSupabaseServerClient();
   const publicPlansQuery = await db
     .from("subscription_plans")
     .select("id,name,description,is_public")
     .eq("is_public", true)
-    .order("name", { ascending: true })
+    .order("name", { ascending: true });
 
   const planRows = publicPlansQuery.error
     ? (
-      await db
-        .from("subscription_plans")
-        .select("id,name,description")
-        .order("name", { ascending: true })
-    ).data
-    : publicPlansQuery.data
+        await db
+          .from("subscription_plans")
+          .select("id,name,description")
+          .order("name", { ascending: true })
+      ).data
+    : publicPlansQuery.data;
 
   const plans = sortPlans(
     ((planRows as PlanRow[] | null) ?? []).filter((plan) => {
-      const normalized = (plan.name ?? "").trim().toLowerCase()
-      if (!normalized) return false
-      if (plan.is_public === false) return false
-      return normalized !== "new" && normalized !== "admin"
-    })
-  )
+      const normalized = (plan.name ?? "").trim().toLowerCase();
+      if (!normalized) return false;
+      if (plan.is_public === false) return false;
+      return normalized !== "new" && normalized !== "admin";
+    }),
+  );
 
   const currentPlanId = plans.some((plan) => plan.id === access.planId)
     ? (access.planId ?? "")
-    : (plans[0]?.id ?? "")
-  const lastSubmittedAt = formatDate(access.subscription?.submitted_at ?? null)
-  const lastProof = access.subscription?.payment_proof ?? null
-  const isRejected = access.accessState === "rejected"
+    : (plans[0]?.id ?? "");
+  const lastSubmittedAt = formatDate(access.subscription?.submitted_at ?? null);
+  const lastProof = access.subscription?.payment_proof ?? null;
+  const isRejected = access.accessState === "rejected";
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
@@ -161,11 +158,11 @@ export default async function SubscribePage() {
       </section>
 
       <section className="max-w-6xl mx-auto mt-10 grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,420px)]">
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 grid-cols-1">
           {plans.map((plan) => {
-            const planKey = normalizePlanKey(plan.name)
-            const copy = PLAN_COPY[planKey]
-            const isFeatured = planKey === "pro"
+            const planKey = normalizePlanKey(plan.name);
+            const copy = PLAN_COPY[planKey];
+            const isFeatured = planKey === "pro";
 
             return (
               <Card
@@ -177,35 +174,25 @@ export default async function SubscribePage() {
                 }
               >
                 <CardHeader>
-                  <CardTitle className="text-base">
-                    {copy.title}
-                  </CardTitle>
-                  <CardDescription>
-                    {copy.price}
-                  </CardDescription>
+                  <CardTitle className="text-base">{copy.title}</CardTitle>
+                  <CardDescription>{copy.price}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm text-muted-foreground">
-                  <p>
-                    {plan.description?.trim() || copy.summary}
-                  </p>
+                  <p>{plan.description?.trim() || copy.summary}</p>
                   <ul className="space-y-2">
                     {copy.features.map((feature) => (
-                      <li key={feature}>
-                        - {feature}
-                      </li>
+                      <li key={feature}>- {feature}</li>
                     ))}
                   </ul>
                 </CardContent>
               </Card>
-            )
+            );
           })}
         </div>
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle className="text-base">
-              Payment Submission
-            </CardTitle>
+            <CardTitle className="text-base">Payment Submission</CardTitle>
             <CardDescription>
               Your request moves to admin review as soon as proof is submitted.
             </CardDescription>
@@ -225,29 +212,31 @@ export default async function SubscribePage() {
                   description: plan.description ?? null,
                 }))}
                 initialPlanId={currentPlanId}
-                initialPaymentProof={lastProof}
               />
             )}
 
             {(lastSubmittedAt || lastProof) && (
               <div className="rounded-lg border border-border/70 bg-muted/30 px-4 py-3 text-sm">
-                <p className="font-medium">
-                  Latest submission
-                </p>
+                <p className="font-medium">Latest submission</p>
                 {lastSubmittedAt ? (
                   <p className="mt-1 text-muted-foreground">
                     Submitted on {lastSubmittedAt}
                   </p>
                 ) : null}
                 {lastProof ? (
-                  <Link
-                    className="mt-2 inline-block text-primary underline-offset-4 hover:underline"
-                    href={lastProof}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    View current payment proof
-                  </Link>
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Payment proof preview
+                    </p>
+
+                    <a href={lastProof} target="_blank" rel="noreferrer">
+                      <img
+                        src={lastProof}
+                        alt="Payment proof"
+                        className="w-full max-w-xs rounded-md border hover:opacity-90 transition"
+                      />
+                    </a>
+                  </div>
                 ) : null}
               </div>
             )}
@@ -264,6 +253,5 @@ export default async function SubscribePage() {
         </Card>
       </section>
     </main>
-  )
+  );
 }
-

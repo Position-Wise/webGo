@@ -1,10 +1,10 @@
-import Link from "next/link"
-import { updateUserAccess } from "../actions"
-import { toTitleCase } from "../helpers"
-import { fetchAdminProfiles } from "../queries"
-import type { ProfileRow } from "../types"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import Link from "next/link";
+import { updateUserAccess } from "../actions";
+import { toTitleCase } from "../helpers";
+import { fetchAdminProfiles } from "../queries";
+import type { ProfileRow } from "../types";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -12,62 +12,68 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 import {
   getAccessStateFromStatus,
   getAccessStateLabel,
   normalizeSubscriptionStatus,
-} from "@/lib/subscription-status"
+} from "@/lib/subscription-status";
 
-export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic";
 
 function getSubscription(profile: ProfileRow) {
-  return profile.user_subscriptions?.[0] ?? null
+  return profile.user_subscriptions?.[0] ?? null;
 }
 
 function getPlanName(profile: ProfileRow) {
-  const normalized = (getSubscription(profile)?.subscription_plans?.[0]?.name ?? "")
+  const normalized = (
+    getSubscription(profile)?.subscription_plans?.[0]?.name ?? ""
+  )
     .trim()
-    .toLowerCase()
+    .toLowerCase();
 
-  return normalized || null
+  return normalized || null;
 }
 
 function getPlanId(profile: ProfileRow) {
-  const subscription = getSubscription(profile)
-  return subscription?.plan_id ?? subscription?.subscription_plan_id ?? null
+  const subscription = getSubscription(profile);
+  return subscription?.plan_id ?? subscription?.subscription_plan_id ?? null;
 }
 
 function getSubmittedAt(profile: ProfileRow) {
-  return getSubscription(profile)?.submitted_at ?? null
+  return getSubscription(profile)?.submitted_at ?? null;
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "Not submitted"
+  if (!value) return "Not submitted";
 
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return "Not submitted"
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Not submitted";
 
   return parsed.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
-  })
+  });
 }
 
 function sortProfiles(profiles: ProfileRow[]) {
   return [...profiles].sort((left, right) => {
-    const leftSubmittedAt = new Date(getSubmittedAt(left) ?? 0).getTime()
-    const rightSubmittedAt = new Date(getSubmittedAt(right) ?? 0).getTime()
+    const leftSubmittedAt = new Date(getSubmittedAt(left) ?? 0).getTime();
+    const rightSubmittedAt = new Date(getSubmittedAt(right) ?? 0).getTime();
 
     if (rightSubmittedAt !== leftSubmittedAt) {
-      return rightSubmittedAt - leftSubmittedAt
+      return rightSubmittedAt - leftSubmittedAt;
     }
 
-    const leftName = (left.full_name ?? left.email ?? left.id).toLowerCase()
-    const rightName = (right.full_name ?? right.email ?? right.id).toLowerCase()
+    const leftName = (left.full_name ?? left.email ?? left.id).toLowerCase();
+    const rightName = (
+      right.full_name ??
+      right.email ??
+      right.id
+    ).toLowerCase();
 
-    return leftName.localeCompare(rightName)
-  })
+    return leftName.localeCompare(rightName);
+  });
 }
 
 function MetricCard({ label, value }: { label: string; value: number }) {
@@ -77,28 +83,34 @@ function MetricCard({ label, value }: { label: string; value: number }) {
         <p className="text-xs uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="mt-2 text-3xl font-semibold">
-          {value}
-        </p>
+        <p className="mt-2 text-3xl font-semibold">{value}</p>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default async function AdminSubscriptionsPage() {
-  const profiles = sortProfiles(await fetchAdminProfiles())
+  const profiles = sortProfiles(await fetchAdminProfiles());
   const newUserCount = profiles.filter(
-    (profile) => getAccessStateFromStatus(getSubscription(profile)?.status ?? null) === "new_user"
-  ).length
+    (profile) =>
+      getAccessStateFromStatus(getSubscription(profile)?.status ?? null) ===
+      "new_user",
+  ).length;
   const waitingCount = profiles.filter(
-    (profile) => getAccessStateFromStatus(getSubscription(profile)?.status ?? null) === "waiting"
-  ).length
+    (profile) =>
+      getAccessStateFromStatus(getSubscription(profile)?.status ?? null) ===
+      "waiting",
+  ).length;
   const approvedCount = profiles.filter(
-    (profile) => getAccessStateFromStatus(getSubscription(profile)?.status ?? null) === "approved"
-  ).length
+    (profile) =>
+      getAccessStateFromStatus(getSubscription(profile)?.status ?? null) ===
+      "approved",
+  ).length;
   const rejectedCount = profiles.filter(
-    (profile) => getAccessStateFromStatus(getSubscription(profile)?.status ?? null) === "rejected"
-  ).length
+    (profile) =>
+      getAccessStateFromStatus(getSubscription(profile)?.status ?? null) ===
+      "rejected",
+  ).length;
 
   return (
     <section className="space-y-6">
@@ -111,49 +123,36 @@ export default async function AdminSubscriptionsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Subscription Requests
-          </CardTitle>
+          <CardTitle className="text-base">Subscription Requests</CardTitle>
         </CardHeader>
         <CardContent>
           {!profiles.length ? (
-            <p className="text-sm text-muted-foreground">
-              No users found yet.
-            </p>
+            <p className="text-sm text-muted-foreground">No users found yet.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>
-                    User
-                  </TableHead>
-                  <TableHead>
-                    Plan
-                  </TableHead>
-                  <TableHead>
-                    Status
-                  </TableHead>
-                  <TableHead>
-                    Submitted
-                  </TableHead>
-                  <TableHead>
-                    Proof
-                  </TableHead>
-                  <TableHead className="text-right">
-                    Actions
-                  </TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead>Proof</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {profiles.map((profile) => {
-                  const subscription = getSubscription(profile)
-                  const status = normalizeSubscriptionStatus(subscription?.status ?? null)
-                  const accessState = getAccessStateFromStatus(status)
-                  const planName = getPlanName(profile)
-                  const planId = getPlanId(profile)
-                  const paymentProof = subscription?.payment_proof ?? null
-                  const role = (profile.role ?? "user").trim().toLowerCase() || "user"
-                  const canApprove = Boolean(planId && paymentProof)
+                  const subscription = getSubscription(profile);
+                  const status = normalizeSubscriptionStatus(
+                    subscription?.status ?? null,
+                  );
+                  const accessState = getAccessStateFromStatus(status);
+                  const planName = getPlanName(profile);
+                  const planId = getPlanId(profile);
+                  const paymentProof = subscription?.payment_proof ?? null;
+                  const role =
+                    (profile.role ?? "user").trim().toLowerCase() || "user";
+                  const canApprove = Boolean(planId && paymentProof);
 
                   return (
                     <TableRow key={profile.id}>
@@ -168,22 +167,33 @@ export default async function AdminSubscriptionsPage() {
                       <TableCell>
                         {planName ? toTitleCase(planName) : "Not selected"}
                       </TableCell>
-                      <TableCell>
-                        {getAccessStateLabel(accessState)}
-                      </TableCell>
+                      <TableCell>{getAccessStateLabel(accessState)}</TableCell>
                       <TableCell>
                         {formatDate(getSubmittedAt(profile))}
                       </TableCell>
                       <TableCell>
                         {paymentProof ? (
-                          <Link
-                            className="text-primary underline-offset-4 hover:underline"
-                            href={paymentProof}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            Open proof
-                          </Link>
+                          <div className="flex items-center gap-3">
+                            <a
+                              href={paymentProof}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img
+                                src={paymentProof}
+                                alt="proof"
+                                className="w-12 h-12 object-cover rounded border"
+                              />
+                            </a>
+
+                            <Link
+                              className="text-xs text-primary underline-offset-4 hover:underline"
+                              href={paymentProof}
+                              target="_blank"
+                            >
+                              View
+                            </Link>
+                          </div>
                         ) : (
                           "Missing"
                         )}
@@ -191,7 +201,11 @@ export default async function AdminSubscriptionsPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <form action={updateUserAccess}>
-                            <input name="userId" type="hidden" value={profile.id} />
+                            <input
+                              name="userId"
+                              type="hidden"
+                              value={profile.id}
+                            />
                             <input name="role" type="hidden" value={role} />
                             <input
                               name="currentPlanName"
@@ -205,7 +219,9 @@ export default async function AdminSubscriptionsPage() {
                             />
                             <input name="status" type="hidden" value="active" />
                             <Button
-                              disabled={!canApprove || accessState === "approved"}
+                              disabled={
+                                !canApprove || accessState === "approved"
+                              }
                               size="sm"
                               type="submit"
                             >
@@ -214,7 +230,11 @@ export default async function AdminSubscriptionsPage() {
                           </form>
 
                           <form action={updateUserAccess}>
-                            <input name="userId" type="hidden" value={profile.id} />
+                            <input
+                              name="userId"
+                              type="hidden"
+                              value={profile.id}
+                            />
                             <input name="role" type="hidden" value={role} />
                             <input
                               name="currentPlanName"
@@ -226,7 +246,11 @@ export default async function AdminSubscriptionsPage() {
                               type="hidden"
                               value={planId ?? "__current__"}
                             />
-                            <input name="status" type="hidden" value="rejected" />
+                            <input
+                              name="status"
+                              type="hidden"
+                              value="rejected"
+                            />
                             <Button
                               disabled={accessState === "rejected"}
                               size="sm"
@@ -243,7 +267,7 @@ export default async function AdminSubscriptionsPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  )
+                  );
                 })}
               </TableBody>
             </Table>
@@ -251,5 +275,5 @@ export default async function AdminSubscriptionsPage() {
         </CardContent>
       </Card>
     </section>
-  )
+  );
 }
