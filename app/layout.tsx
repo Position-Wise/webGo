@@ -3,6 +3,7 @@ import { Work_Sans } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Nav";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import SonnerProvider from "@/components/providers/sonner-provider";
 import { Analytics } from "@vercel/analytics/next"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 
@@ -29,6 +30,7 @@ export default function RootLayout({
         <AuthProvider>
           <Navbar />
           {children}
+          <SonnerProvider />
           <Analytics />
           <SpeedInsights />
         </AuthProvider>

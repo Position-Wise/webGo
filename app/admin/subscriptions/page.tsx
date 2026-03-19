@@ -26,9 +26,14 @@ function getSubscription(profile: ProfileRow) {
 }
 
 function getPlanName(profile: ProfileRow) {
-  const normalized = (
-    getSubscription(profile)?.subscription_plans?.[0]?.name ?? ""
-  )
+  const subscriptionPlans = getSubscription(profile)?.subscription_plans as unknown;
+  const firstPlan =
+    Array.isArray(subscriptionPlans)
+      ? subscriptionPlans[0]
+      : subscriptionPlans && typeof subscriptionPlans === "object"
+        ? subscriptionPlans
+        : null;
+  const normalized = (((firstPlan as { name?: string | null } | null)?.name ?? "") as string)
     .trim()
     .toLowerCase();
 
@@ -150,8 +155,6 @@ export default async function AdminSubscriptionsPage() {
                   const planName = getPlanName(profile);
                   const planId = getPlanId(profile);
                   const paymentProof = subscription?.payment_proof ?? null;
-                  const role =
-                    (profile.role ?? "user").trim().toLowerCase() || "user";
                   const canApprove = Boolean(planId && paymentProof);
 
                   return (
@@ -206,7 +209,6 @@ export default async function AdminSubscriptionsPage() {
                               type="hidden"
                               value={profile.id}
                             />
-                            <input name="role" type="hidden" value={role} />
                             <input
                               name="currentPlanName"
                               type="hidden"
@@ -235,7 +237,6 @@ export default async function AdminSubscriptionsPage() {
                               type="hidden"
                               value={profile.id}
                             />
-                            <input name="role" type="hidden" value={role} />
                             <input
                               name="currentPlanName"
                               type="hidden"
@@ -277,3 +278,5 @@ export default async function AdminSubscriptionsPage() {
     </section>
   );
 }
+
+
