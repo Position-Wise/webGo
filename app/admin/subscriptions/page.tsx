@@ -2,6 +2,7 @@ import Link from "next/link";
 import { updateUserAccess } from "../actions";
 import { toTitleCase } from "../helpers";
 import { fetchAdminProfiles } from "../queries";
+import ProofPreviewDrawer from "./proof-preview-drawer";
 import type { ProfileRow } from "../types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -176,27 +177,10 @@ export default async function AdminSubscriptionsPage() {
                       </TableCell>
                       <TableCell>
                         {paymentProof ? (
-                          <div className="flex items-center gap-3">
-                            <a
-                              href={paymentProof}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <img
-                                src={paymentProof}
-                                alt="proof"
-                                className="w-12 h-12 object-cover rounded border"
-                              />
-                            </a>
-
-                            <Link
-                              className="text-xs text-primary underline-offset-4 hover:underline"
-                              href={paymentProof}
-                              target="_blank"
-                            >
-                              View
-                            </Link>
-                          </div>
+                          <ProofPreviewDrawer
+                            paymentProof={paymentProof}
+                            memberLabel={profile.full_name || profile.email || "Member"}
+                          />
                         ) : (
                           "Missing"
                         )}
@@ -278,5 +262,7 @@ export default async function AdminSubscriptionsPage() {
     </section>
   );
 }
+
+
 
 

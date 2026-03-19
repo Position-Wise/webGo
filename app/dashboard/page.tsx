@@ -61,29 +61,6 @@ function normalizeBroadcastType(
   return "investment"
 }
 
-function getDefaultTradeAccess(planName: string) {
-  return planName === "pro" || planName === "premium" || planName === "admin"
-}
-
-function getDefaultInvestmentAccess(planName: string) {
-  return planName !== "new"
-}
-
-function getDefaultTradeLimit(planName: string) {
-  if (planName === "pro") return 2
-  if (planName === "basic") return 0
-  return null
-}
-
-function getStartOfWeekIso() {
-  const now = new Date()
-  const dayOfWeek = now.getUTCDay()
-  const mondayOffset = (dayOfWeek + 6) % 7
-  now.setUTCDate(now.getUTCDate() - mondayOffset)
-  now.setUTCHours(0, 0, 0, 0)
-  return now.toISOString()
-}
-
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient()
   const access = await getCurrentUserAccessState(supabase)
@@ -119,31 +96,6 @@ export default async function DashboardPage() {
 
   const normalizedPlan = normalizePlanName(planRow?.name ?? fallbackPlanName)
   const audienceKeys = getPlanAudienceKeys(normalizedPlan)
-  const allowTrade =
-    typeof planRow?.allow_trade === "boolean"
-      ? planRow.allow_trade
-      : getDefaultTradeAccess(normalizedPlan)
-  const allowInvestment =
-    typeof planRow?.allow_investment === "boolean"
-      ? planRow.allow_investment
-      : getDefaultInvestmentAccess(normalizedPlan)
-  const tradeLimitPerWeek =
-    typeof planRow?.trade_limit_per_week === "number"
-      ? Math.max(0, Math.floor(planRow.trade_limit_per_week))
-      : getDefaultTradeLimit(normalizedPlan)
-
-  let hasReachedTradeLimit = false
-
-  if (allowTrade && typeof tradeLimitPerWeek === "number") {
-    const startOfWeek = getStartOfWeekIso()
-    const { count } = await supabase
-      .from("trade_usage")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .gte("created_at", startOfWeek)
-
-    hasReachedTradeLimit = (count ?? 0) >= tradeLimitPerWeek
-  }
 
   const nowIso = new Date().toISOString()
   const broadcastSelect = `
@@ -201,13 +153,6 @@ export default async function DashboardPage() {
         audience !== "trade" &&
         !audienceKeys.includes(audience)
       ) {
-        return false
-      }
-      const broadcastType = normalizeBroadcastType(row.broadcast_type)
-      if (broadcastType === "trade" && (!allowTrade || hasReachedTradeLimit)) {
-        return false
-      }
-      if (broadcastType === "investment" && !allowInvestment) {
         return false
       }
 

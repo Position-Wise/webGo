@@ -67,6 +67,7 @@ export default function DashboardTabView({
 
       const broadcastType = (broadcast.broadcast_type ?? "investment").toLowerCase()
       if (broadcastType === "announcement") return true
+      if (audience === "all" || audience === activeTab) return true
       if (activeTab === "trade") return broadcastType === "trade"
       return broadcastType === "investment"
     })
