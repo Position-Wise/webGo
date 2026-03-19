@@ -58,9 +58,13 @@ function toNullableString(value: unknown) {
 }
 
 function toPlanInfo(value: unknown): SubscriptionPlanInfo[] {
-  if (!Array.isArray(value)) return []
+  const list = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [value]
+      : []
 
-  return value
+  return list
     .map((item) => {
       if (!item || typeof item !== "object") return null
       const row = item as Record<string, unknown>

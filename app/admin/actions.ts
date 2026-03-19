@@ -100,7 +100,7 @@ function hasColumn(row: Record<string, unknown>, column: string) {
 async function syncProfileTableAccess(
   db: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   userId: string,
-  targetRole: string,
+  targetRole: string | null,
   plan: string | null,
   status: string | null
 ) {
@@ -128,7 +128,7 @@ async function syncProfileTableAccess(
 
   const payload: Record<string, string | null> = {}
 
-  if (hasColumn(profileRow, "role")) payload.role = targetRole
+  if (targetRole && hasColumn(profileRow, "role")) payload.role = targetRole
   if (hasColumn(profileRow, "status")) payload.status = status
   if (hasColumn(profileRow, "plan")) payload.plan = plan
   if (hasColumn(profileRow, "subscription_status")) payload.subscription_status = status
@@ -144,11 +144,25 @@ async function syncProfileTableAccess(
 }
 
 function normalizeRole(value: string | null) {
-  const normalized = (value ?? "").trim().toLowerCase()
+  let normalized = (value ?? "").trim().toLowerCase()
+  if (normalized === "user") {
+    normalized = "customer"
+  }
+  if (
+    !normalized ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "__current__"
+  ) {
+    return null
+  }
   if (ROLES.includes(normalized as (typeof ROLES)[number])) {
     return normalized
   }
-  return "user"
+  if (normalized === "master_admin") {
+    return normalized
+  }
+  return null
 }
 
 function normalizeStatus(value: string | null) {
@@ -166,10 +180,30 @@ function revalidateAdminRoutes() {
   ADMIN_ROUTES_TO_REVALIDATE.forEach((path) => revalidatePath(path))
 }
 
-export async function updateUserAccess(formData: FormData): Promise<void> {
+function normalizeDateInput(value: string | null) {
+  const normalized = (value ?? "").trim()
+  if (!normalized) return null
+
+  const parsed = new Date(`${normalized}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString()
+}
+
+type UpdateUserAccessResult =
+  | { ok: true }
+  | {
+      ok: false
+      error: string
+    }
+
+async function updateUserAccessInternal(formData: FormData): Promise<UpdateUserAccessResult> {
   const userId = formData.get("userId") as string | null
   const targetRole = normalizeRole(formData.get("role") as string | null)
   const status = normalizeStatus(formData.get("status") as string | null)
+  const subscriptionEndDateRaw = (
+    (formData.get("subscriptionEndDate") as string | null) ?? ""
+  ).trim()
+  const subscriptionEndDate = normalizeDateInput(subscriptionEndDateRaw)
 
   const requestedPlanIdRaw = (
     ((formData.get("planId") as string | null) ??
@@ -185,21 +219,32 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
     .trim()
     .toLowerCase()
 
-  if (!userId) return
+  if (!userId) {
+    return { ok: false, error: "Missing user id." }
+  }
+
+  if (subscriptionEndDateRaw && !subscriptionEndDate) {
+    return { ok: false, error: "Invalid subscription end date." }
+  }
 
   const { supabase, callerRole } = await getCallerRole()
 
-  if (!isAdminRole(callerRole)) return
+  if (!isAdminRole(callerRole)) {
+    return { ok: false, error: "Only admins can update users." }
+  }
 
   const db = getPrivilegedClient(supabase)
 
-  const { error: roleError } = await db
-    .from("profiles")
-    .update({ role: targetRole })
-    .eq("id", userId)
+  if (targetRole) {
+    const { error: roleError } = await db
+      .from("profiles")
+      .update({ role: targetRole })
+      .eq("id", userId)
 
-  if (roleError) {
-    console.error("Role update error:", roleError)
+    if (roleError) {
+      console.error("Role update error:", roleError)
+      return { ok: false, error: roleError.message ?? "Failed to update role." }
+    }
   }
 
   let selectedPlanName: string | null = null
@@ -223,6 +268,11 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
     subscriptionPayload.plan_id = requestedPlanId
   }
 
+  if (subscriptionEndDate) {
+    subscriptionPayload.ends_at = subscriptionEndDate
+    subscriptionPayload.current_period_end = subscriptionEndDate
+  }
+
   let subscriptionWrite = await db
     .from("user_subscriptions")
     .upsert(subscriptionPayload, { onConflict: "user_id" })
@@ -242,14 +292,34 @@ export async function updateUserAccess(formData: FormData): Promise<void> {
 
   if (subscriptionWrite.error) {
     console.error("Subscription update error:", subscriptionWrite.error)
+    return {
+      ok: false,
+      error: subscriptionWrite.error.message ?? "Failed to update subscription.",
+    }
   }
 
   const rawPlanForProfile = selectedPlanName?.trim() || currentPlanName || null
   const planForProfile = rawPlanForProfile ? rawPlanForProfile.toLowerCase() : null
 
-  await syncProfileTableAccess(db, userId, targetRole, planForProfile, status)
+  try {
+    await syncProfileTableAccess(db, userId, targetRole, planForProfile, status)
+  } catch (profileSyncError) {
+    console.error("Profile sync error:", profileSyncError)
+    return { ok: false, error: "Subscription updated, but profile sync failed." }
+  }
 
   revalidateAdminRoutes()
+  return { ok: true }
+}
+
+export async function updateUserAccess(formData: FormData): Promise<void> {
+  await updateUserAccessInternal(formData)
+}
+
+export async function updateUserAccessWithResult(
+  formData: FormData
+): Promise<UpdateUserAccessResult> {
+  return updateUserAccessInternal(formData)
 }
 
 export async function publishBroadcast(formData: FormData): Promise<void> {

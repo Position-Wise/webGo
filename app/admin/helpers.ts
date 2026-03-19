@@ -1,4 +1,4 @@
-export const ROLES = ["user", "admin"] as const
+export const ROLES = ["customer", "admin"] as const
 export const PLANS = ["basic", "pro", "premium", "new", "admin"] as const
 export const STATUSES = ["pending", "active", "rejected"] as const
 export const BROADCAST_AUDIENCES = [

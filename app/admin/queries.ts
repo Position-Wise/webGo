@@ -41,11 +41,37 @@ function toProfileRowFromProfileTable(raw: Record<string, unknown>): ProfileRow 
   }
 }
 
+function toSubscriptionsArray(
+  value: unknown
+): NonNullable<ProfileRow["user_subscriptions"]> {
+  if (Array.isArray(value)) {
+    return value as NonNullable<ProfileRow["user_subscriptions"]>
+  }
+
+  if (value && typeof value === "object") {
+    return [value as NonNullable<ProfileRow["user_subscriptions"]>[number]]
+  }
+
+  return []
+}
+
+function toSubscriptionPlansArray(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (value && typeof value === "object") {
+    return [value]
+  }
+
+  return []
+}
+
 function applyInternalMembershipOverride(profile: ProfileRow): ProfileRow {
-  // ✅ Always normalize subscriptions safely
-  const subscriptions = Array.isArray(profile.user_subscriptions)
-    ? profile.user_subscriptions
-    : []
+  const subscriptions = toSubscriptionsArray(profile.user_subscriptions).map((subscription) => ({
+    ...subscription,
+    subscription_plans: toSubscriptionPlansArray(subscription.subscription_plans),
+  }))
 
   // ✅ Always pick latest submission (important)
   const latestSubscription =
@@ -106,25 +132,41 @@ function applyProfileOverrides(profiles: ProfileRow[]) {
 async function fetchProfilesFromProfilesTable(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>
 ) {
-  const { data } = await supabase
-  .from("profiles")
-  .select(`
-    *,
-    user_subscriptions!user_subscriptions_user_id_fkey (
-      id,
-      user_id,
-      status,
-      payment_proof,
-      submitted_at,
-      subscription_plan_id,
-      subscription_plans (
-        id,
-        name,
-        description
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(`
+      *,
+      user_subscriptions!user_subscriptions_user_id_fkey (
+        *,
+        subscription_plans (
+          id,
+          name,
+          description
+        )
       )
-    )
-  `)
-  .order("full_name", { ascending: true })
+    `)
+    .order("full_name", { ascending: true })
+
+  if (error) {
+    console.error("Profiles query with subscriptions failed:", error)
+
+    // Fallback: keep users visible even if nested subscription schema differs.
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("full_name", { ascending: true })
+
+    if (fallbackError) {
+      console.error("Profiles fallback query failed:", fallbackError)
+      return []
+    }
+
+    return ((fallbackData as ProfileRow[] | null) ?? []).map((row) => ({
+      ...row,
+      source_table: "profiles" as const,
+      user_subscriptions: [],
+    }))
+  }
 
   return ((data as ProfileRow[] | null) ?? []).map((row) => ({
     ...row,
