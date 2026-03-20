@@ -16,7 +16,7 @@ export default function AdminNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="inline-flex rounded-xl border border-border bg-card p-1.5">
+    <nav className="inline-flex flex-wrap rounded-xl border border-border bg-card p-1.5">
       {ADMIN_NAV_ITEMS.map((item) => {
         const isActive =
           pathname === item.href ||

@@ -301,7 +301,7 @@ export default async function AdminPage() {
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
     <Card>
-      <CardContent className="pt-6">
+      <CardContent>
         <p className="text-xs uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
