@@ -4,8 +4,10 @@ import { getBroadcastAuthorName } from "@/app/admin/helpers"
 import DashboardTabView, {
   type DashboardBroadcast,
 } from "@/components/dashboard/dashboard-tab-view"
+import LiveMarketBoard from "@/components/dashboard/live-market-board"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import { getAccessStateLabel } from "@/lib/subscription-status"
+import type { MarketSymbolOption } from "@/lib/market-symbols"
 
 export const dynamic = "force-dynamic"
 
@@ -36,6 +38,17 @@ type BroadcastRow = {
   created_at: string | null
 }
 
+type MarketSymbolRow = {
+  symbol?: string | null
+  display_name?: string | null
+  is_active?: boolean | null
+}
+
+type BroadcastFeedbackRow = {
+  broadcast_id?: string | null
+  outcome?: string | null
+}
+
 function normalizePlanName(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase()
   if (normalized === "pro" || normalized === "growth") return "pro"
@@ -53,12 +66,28 @@ function getPlanAudienceKeys(planName: string) {
   return [planName]
 }
 
+function defaultAllowTrade(planName: string) {
+  return planName === "pro" || planName === "premium" || planName === "admin"
+}
+
+function defaultAllowInvestment(planName: string) {
+  return planName !== "new"
+}
+
 function normalizeBroadcastType(
   value: string | null | undefined
 ): "trade" | "investment" | "announcement" {
   const normalized = (value ?? "investment").toLowerCase()
   if (normalized === "trade" || normalized === "announcement") return normalized
   return "investment"
+}
+
+function normalizeMarketSymbol(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toUpperCase()
+  if (!normalized) return null
+  if (normalized.length > 20) return null
+  if (!/^[A-Za-z0-9^.\-=&]+$/.test(normalized)) return null
+  return normalized
 }
 
 export default async function DashboardPage() {
@@ -95,6 +124,14 @@ export default async function DashboardPage() {
   }
 
   const normalizedPlan = normalizePlanName(planRow?.name ?? fallbackPlanName)
+  const allowTrade =
+    typeof planRow?.allow_trade === "boolean"
+      ? planRow.allow_trade
+      : defaultAllowTrade(normalizedPlan)
+  const allowInvestment =
+    typeof planRow?.allow_investment === "boolean"
+      ? planRow.allow_investment
+      : defaultAllowInvestment(normalizedPlan)
   const audienceKeys = getPlanAudienceKeys(normalizedPlan)
 
   const nowIso = new Date().toISOString()
@@ -135,6 +172,7 @@ export default async function DashboardPage() {
           title,
           message,
           audience,
+          broadcast_type,
           expires_at,
           created_at
         `)
@@ -169,7 +207,58 @@ export default async function DashboardPage() {
       broadcast_type: normalizeBroadcastType(row.broadcast_type),
       posted_by_name: getBroadcastAuthorName(row.profiles),
       created_at: row.created_at,
+      user_feedback: null,
     }))
+
+  const broadcastIds = broadcasts.map((broadcast) => broadcast.id)
+  const feedbackByBroadcast: Record<string, "profit" | "loss"> = {}
+
+  if (broadcastIds.length) {
+    const { data: feedbackRows } = await supabase
+      .from("broadcast_feedback")
+      .select("broadcast_id,outcome")
+      .eq("user_id", user.id)
+      .in("broadcast_id", broadcastIds)
+
+    for (const row of (feedbackRows as BroadcastFeedbackRow[] | null) ?? []) {
+      const broadcastId = (row.broadcast_id ?? "").trim()
+      const outcome = (row.outcome ?? "").trim().toLowerCase()
+      if (!broadcastId) continue
+      if (outcome !== "profit" && outcome !== "loss") continue
+      feedbackByBroadcast[broadcastId] = outcome
+    }
+  }
+
+  const broadcastsWithFeedback = broadcasts.map((broadcast) => ({
+    ...broadcast,
+    user_feedback: feedbackByBroadcast[broadcast.id] ?? null,
+  }))
+
+  const { data: marketRows } = await supabase
+    .from("market_symbols")
+    .select("symbol,display_name,is_active,sort_order")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("display_name", { ascending: true })
+    .limit(120)
+
+  const availableMarketSymbols: MarketSymbolOption[] = Array.from(
+    new Map(
+      (((marketRows as MarketSymbolRow[] | null) ?? [])
+        .map((row) => {
+          const symbol = normalizeMarketSymbol(row.symbol)
+          if (!symbol) return null
+
+          return {
+            symbol,
+            label: (row.display_name ?? "").trim() || symbol,
+          }
+        })
+        .filter(
+          (row): row is MarketSymbolOption => row !== null
+        )).map((row) => [row.symbol, row])
+    ).values()
+  )
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
@@ -216,8 +305,14 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        <LiveMarketBoard availableSymbols={availableMarketSymbols} />
+
         <div>
-          <DashboardTabView broadcasts={broadcasts} />
+          <DashboardTabView
+            broadcasts={broadcastsWithFeedback}
+            allowTrade={allowTrade}
+            allowInvestment={allowInvestment}
+          />
         </div>
       </section>
     </main>

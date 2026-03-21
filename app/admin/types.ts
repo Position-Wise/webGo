@@ -55,3 +55,13 @@ export type BroadcastRow = {
     | null
   created_at: string | null
 }
+
+export type MarketSymbolRow = {
+  id: string
+  symbol: string | null
+  display_name: string | null
+  is_active?: boolean | null
+  sort_order?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+}

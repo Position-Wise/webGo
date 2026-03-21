@@ -3,7 +3,12 @@ import {
   createSupabaseServiceRoleClient,
 } from "@/lib/supabase/server"
 import { isAdminRole } from "@/lib/roles"
-import type { BroadcastRow, ProfileRow, SubscriptionPlanRow } from "./types"
+import type {
+  BroadcastRow,
+  MarketSymbolRow,
+  ProfileRow,
+  SubscriptionPlanRow,
+} from "./types"
 
 function toNullableString(value: unknown) {
   if (typeof value !== "string") return null
@@ -272,6 +277,8 @@ export async function fetchAdminBroadcasts(limit = 20) {
         title,
         message,
         audience,
+        broadcast_type,
+        created_by,
         duration,
         expires_at,
         created_at
@@ -286,4 +293,78 @@ export async function fetchAdminBroadcasts(limit = 20) {
     if (!row.expires_at) return true
     return row.expires_at > nowIso
   })
+}
+
+export async function fetchAdminMarketSymbols() {
+  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+
+  const { data } = await supabase
+    .from("market_symbols")
+    .select("id,symbol,display_name,is_active,sort_order,created_at,updated_at")
+    .order("sort_order", { ascending: true })
+    .order("display_name", { ascending: true })
+
+  return ((data as MarketSymbolRow[] | null) ?? []).filter((row) => {
+    const symbol = (row.symbol ?? "").trim()
+    return Boolean(symbol)
+  })
+}
+
+export async function fetchBroadcastFeedbackSummary(broadcastIds?: string[]) {
+  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const normalizedIds = (broadcastIds ?? []).map((id) => id.trim()).filter(Boolean)
+
+  let query = supabase
+    .from("broadcast_feedback")
+    .select("broadcast_id,outcome")
+
+  if (normalizedIds.length) {
+    query = query.in("broadcast_id", normalizedIds)
+  }
+
+  const { data } = await query
+
+  const summary: Record<
+    string,
+    {
+      profit: number
+      loss: number
+      total: number
+      efficiency: number
+    }
+  > = {}
+
+  for (const row of (data as { broadcast_id?: string | null; outcome?: string | null }[] | null) ?? []) {
+    const broadcastId = (row.broadcast_id ?? "").trim()
+    if (!broadcastId) continue
+
+    if (!summary[broadcastId]) {
+      summary[broadcastId] = {
+        profit: 0,
+        loss: 0,
+        total: 0,
+        efficiency: 0,
+      }
+    }
+
+    const outcome = (row.outcome ?? "").trim().toLowerCase()
+    if (outcome === "profit") {
+      summary[broadcastId].profit += 1
+      summary[broadcastId].total += 1
+      continue
+    }
+
+    if (outcome === "loss") {
+      summary[broadcastId].loss += 1
+      summary[broadcastId].total += 1
+    }
+  }
+
+  Object.keys(summary).forEach((broadcastId) => {
+    const total = summary[broadcastId].total
+    summary[broadcastId].efficiency =
+      total > 0 ? Math.round((summary[broadcastId].profit / total) * 100) : 0
+  })
+
+  return summary
 }

@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import LoadingSubmitButton from "@/components/ui/loading-submit-button"
 
 export const dynamic = "force-dynamic"
 
@@ -159,9 +160,9 @@ export default async function AdminPage() {
                 />
               </div>
 
-              <Button type="submit" size="sm">
+              <LoadingSubmitButton type="submit" size="sm" pendingText="Posting...">
                 Post update
-              </Button>
+              </LoadingSubmitButton>
             </form>
 
             <div className="space-y-2">
