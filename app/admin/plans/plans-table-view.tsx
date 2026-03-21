@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/drawer"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import LoadingSubmitButton from "@/components/ui/loading-submit-button"
 import {
   Table,
   TableBody,
@@ -234,9 +235,9 @@ function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
             />
           </div>
 
-          <Button type="submit" size="sm">
+          <LoadingSubmitButton type="submit" size="sm" pendingText="Saving...">
             Save plan
-          </Button>
+          </LoadingSubmitButton>
         </form>
       </DrawerContent>
     </Drawer>
@@ -304,3 +305,4 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
     </Table>
   )
 }
+

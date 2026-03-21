@@ -14,6 +14,7 @@ export type DashboardBroadcast = {
   broadcast_type?: "trade" | "investment" | "announcement" | null
   posted_by_name?: string | null
   created_at: string | null
+  user_feedback?: "profit" | "loss" | null
 }
 
 const DASHBOARD_TABS = [
@@ -26,6 +27,11 @@ const DASHBOARD_TABS = [
     key: "trade",
     label: "Trade",
     helper: "Short-term setups, execution notes, and risk controls.",
+  },
+  {
+    key: "announcement",
+    label: "Announcement",
+    helper: "Platform-wide admin updates and important notices.",
   },
 ] as const
 
@@ -44,18 +50,45 @@ function formatPublishedAt(createdAt: string | null) {
 
 export default function DashboardTabView({
   broadcasts,
+  allowTrade,
+  allowInvestment,
 }: {
   broadcasts: DashboardBroadcast[]
+  allowTrade: boolean
+  allowInvestment: boolean
 }) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<DashboardTab>("invest")
+  const [feedbackOverrides, setFeedbackOverrides] = useState<
+    Record<string, "profit" | "loss">
+  >({})
+  const [pendingFeedbackKey, setPendingFeedbackKey] = useState<string | null>(null)
+  const availableTabs = useMemo(() => {
+    return DASHBOARD_TABS.filter((tab) => {
+      if (tab.key === "invest") return allowInvestment
+      if (tab.key === "trade") return allowTrade
+      return true
+    })
+  }, [allowInvestment, allowTrade])
+  const [selectedTab, setSelectedTab] = useState<DashboardTab>(
+    allowInvestment ? "invest" : allowTrade ? "trade" : "announcement"
+  )
+  const activeTab = useMemo<DashboardTab>(() => {
+    if (availableTabs.some((tab) => tab.key === selectedTab)) {
+      return selectedTab
+    }
+    if (allowInvestment) return "invest"
+    if (allowTrade) return "trade"
+    return "announcement"
+  }, [allowInvestment, allowTrade, availableTabs, selectedTab])
 
   const visibleBroadcasts = useMemo(() => {
+    if (!availableTabs.length) return []
+
     return broadcasts.filter((broadcast) => {
       const audience = (broadcast.audience ?? "all").toLowerCase()
-      const matchesAudience =
+      const broadcastType = (broadcast.broadcast_type ?? "investment").toLowerCase()
+      const matchesPlanAudience =
         audience === "all" ||
-        audience === activeTab ||
         audience === "basic" ||
         audience === "pro" ||
         audience === "premium" ||
@@ -63,15 +96,58 @@ export default function DashboardTabView({
         audience === "growth" ||
         audience === "elite"
 
-      if (!matchesAudience) return false
+      if (audience === "invest" && !allowInvestment) return false
+      if (audience === "trade" && !allowTrade) return false
 
-      const broadcastType = (broadcast.broadcast_type ?? "investment").toLowerCase()
-      if (broadcastType === "announcement") return true
-      if (audience === "all" || audience === activeTab) return true
+      if (activeTab === "announcement") {
+        return broadcastType === "announcement"
+      }
+
+      if (broadcastType === "announcement") {
+        return false
+      }
+
+      if (audience === "invest" || audience === "trade") {
+        return audience === activeTab
+      }
+
+      if (!matchesPlanAudience) return false
+
       if (activeTab === "trade") return broadcastType === "trade"
       return broadcastType === "investment"
     })
-  }, [activeTab, broadcasts])
+  }, [activeTab, allowInvestment, allowTrade, availableTabs.length, broadcasts])
+
+  async function submitFeedback(broadcastId: string, outcome: "profit" | "loss") {
+    const pendingKey = `${broadcastId}:${outcome}`
+    setPendingFeedbackKey(pendingKey)
+
+    try {
+      const response = await fetch("/api/broadcast-feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          broadcastId,
+          outcome,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to save feedback.")
+      }
+
+      setFeedbackOverrides((current) => ({
+        ...current,
+        [broadcastId]: outcome,
+      }))
+    } catch (error) {
+      console.error("Broadcast feedback error:", error)
+    } finally {
+      setPendingFeedbackKey(null)
+    }
+  }
 
   useEffect(() => {
     const channel = supabase
@@ -118,42 +194,42 @@ export default function DashboardTabView({
 
   return (
     <section className="space-y-5">
-      <div className="rounded-xl border border-border bg-card p-5">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Dashboard View
-        </p>
-
-        <div className="mt-4 inline-flex rounded-lg border border-border bg-muted/50 p-1">
-          {DASHBOARD_TABS.map((tab) => {
-            const isActive = tab.key === activeTab
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "rounded-md px-4 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
-        </div>
-
-        <p className="mt-3 text-sm text-muted-foreground">
-          {DASHBOARD_TABS.find((tab) => tab.key === activeTab)?.helper}
-        </p>
-      </div>
-
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Admin broadcasts for {activeTab === "invest" ? "Invest" : "Trade"}
-          </CardTitle>
+        <CardHeader className="space-y-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              Dashboard View
+            </p>
+            <CardTitle className="mt-2 text-base">
+              Admin broadcasts: {availableTabs.find((tab) => tab.key === activeTab)?.label}
+            </CardTitle>
+          </div>
+
+          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-1">
+            {availableTabs.map((tab) => {
+              const isActive = tab.key === activeTab
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setSelectedTab(tab.key)}
+                  className={cn(
+                    "rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            {availableTabs.find((tab) => tab.key === activeTab)?.helper ??
+              "Broadcast access is controlled by your assigned membership plan."}
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           {!visibleBroadcasts.length ? (
@@ -166,6 +242,52 @@ export default function DashboardTabView({
                 key={broadcast.id}
                 className="rounded-lg border border-border/70 bg-muted/30 p-4"
               >
+                {(() => {
+                  const feedback =
+                    feedbackOverrides[broadcast.id] ?? broadcast.user_feedback ?? null
+                  const isProfitActive = feedback === "profit"
+                  const isLossActive = feedback === "loss"
+                  const isPending =
+                    pendingFeedbackKey?.startsWith(`${broadcast.id}:`) ?? false
+
+                  return (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => void submitFeedback(broadcast.id, "profit")}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          isProfitActive
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                            : "border-border text-muted-foreground hover:text-foreground",
+                          isPending && "opacity-70"
+                        )}
+                      >
+                        {isPending && pendingFeedbackKey === `${broadcast.id}:profit`
+                          ? "Saving..."
+                          : "Profit"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => void submitFeedback(broadcast.id, "loss")}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          isLossActive
+                            ? "border-red-300 bg-red-50 text-red-700"
+                            : "border-border text-muted-foreground hover:text-foreground",
+                          isPending && "opacity-70"
+                        )}
+                      >
+                        {isPending && pendingFeedbackKey === `${broadcast.id}:loss`
+                          ? "Saving..."
+                          : "Loss"}
+                      </button>
+                    </div>
+                  )
+                })()}
+
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
                   {formatPublishedAt(broadcast.created_at)}
                 </p>

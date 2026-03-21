@@ -26,6 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={workSans.variable}>
+      <head>
+        <link rel="preconnect" href="https://s3.tradingview.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://www.tradingview.com" crossOrigin="anonymous" />
+      </head>
       <body className="font-sans bg-background text-foreground transition-colors duration-300">
         <AuthProvider>
           <Navbar />

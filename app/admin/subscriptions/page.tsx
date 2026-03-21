@@ -6,6 +6,7 @@ import ProofPreviewDrawer from "./proof-preview-drawer";
 import type { ProfileRow } from "../types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import LoadingSubmitButton from "@/components/ui/loading-submit-button";
 import {
   Table,
   TableBody,
@@ -204,15 +205,16 @@ export default async function AdminSubscriptionsPage() {
                               value={planId ?? "__current__"}
                             />
                             <input name="status" type="hidden" value="active" />
-                            <Button
+                            <LoadingSubmitButton
                               disabled={
                                 !canApprove || accessState === "approved"
                               }
                               size="sm"
                               type="submit"
+                              pendingText="Approving..."
                             >
                               Approve
-                            </Button>
+                            </LoadingSubmitButton>
                           </form>
 
                           <form action={updateUserAccess}>
@@ -236,14 +238,15 @@ export default async function AdminSubscriptionsPage() {
                               type="hidden"
                               value="rejected"
                             />
-                            <Button
+                            <LoadingSubmitButton
                               disabled={accessState === "rejected"}
                               size="sm"
                               type="submit"
                               variant="outline"
+                              pendingText="Rejecting..."
                             >
                               Reject
-                            </Button>
+                            </LoadingSubmitButton>
                           </form>
 
                           <Button asChild size="sm" variant="ghost">

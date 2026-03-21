@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +35,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { user, profile } = useAuth();
   const accessState = getAccessStateFromStatus(profile?.status ?? null);
   const memberHomePath = getMemberHomePathForState(accessState);
@@ -73,6 +76,26 @@ export default function Navbar() {
   ];
 
   const navItems = user ? authedNavItems : baseNavItems;
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+
+    try {
+      const { error } = await supabase.auth.signOut({ scope: "global" });
+
+      // If remote revocation fails, still clear this browser session.
+      if (error) {
+        await supabase.auth.signOut({ scope: "local" });
+      }
+    } catch (logoutError) {
+      console.error("Logout error:", logoutError);
+    }
+
+    router.replace("/sign-in");
+    router.refresh();
+  };
 
   return (
     <>
@@ -140,11 +163,10 @@ export default function Navbar() {
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
-                    onClick={async () => {
-                      await supabase.auth.signOut();
-                    }}
+                    disabled={isLoggingOut}
+                    onClick={handleLogout}
                   >
-                    Logout
+                    {isLoggingOut ? "Logging out..." : "Logout"}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -271,11 +293,10 @@ export default function Navbar() {
                 <DropdownMenuSeparator />
 
                 <DropdownMenuItem
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                  }}
+                  disabled={isLoggingOut}
+                  onClick={handleLogout}
                 >
-                  Logout
+                  {isLoggingOut ? "Logging out..." : "Logout"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

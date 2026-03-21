@@ -18,6 +18,7 @@ import { resolveRoleForUser, type MinimalDbClient } from "./access"
 const ADMIN_ROUTES_TO_REVALIDATE = [
   "/admin",
   "/admin/broadcast",
+  "/admin/market-data",
   "/admin/subscriptions",
   "/admin/plans",
   "/admin/users",
@@ -187,6 +188,20 @@ function normalizeDateInput(value: string | null) {
   const parsed = new Date(`${normalized}T00:00:00.000Z`)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed.toISOString()
+}
+
+function normalizeMarketSymbol(value: string | null) {
+  const normalized = (value ?? "").trim().toUpperCase()
+  if (!normalized) return null
+  if (normalized.length > 20) return null
+  if (!/^[A-Za-z0-9^.\-=&]+$/.test(normalized)) return null
+  return normalized
+}
+
+function normalizeSortOrder(value: string | null) {
+  const parsed = Number((value ?? "").trim())
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.floor(parsed))
 }
 
 type UpdateUserAccessResult =
@@ -390,6 +405,141 @@ export async function publishQuickUpdate(formData: FormData): Promise<void> {
   proxyFormData.set("duration", (formData.get("duration") as string | null) ?? "forever")
 
   await publishBroadcast(proxyFormData)
+}
+
+export async function updateBroadcast(formData: FormData): Promise<void> {
+  const broadcastId = (formData.get("broadcastId") as string | null)?.trim() ?? ""
+  const title = (formData.get("title") as string | null)?.trim() ?? ""
+  const message = (formData.get("message") as string | null)?.trim() ?? ""
+  const audience = normalizeAudience(formData.get("audience") as string | null)
+  const broadcastType = normalizeBroadcastType(
+    (formData.get("broadcastType") as string | null) ?? "investment"
+  )
+  const duration = normalizeDuration(formData.get("duration") as string | null)
+
+  if (!broadcastId || !message) return
+
+  const { supabase, callerRole } = await getCallerRole()
+  if (!isAdminRole(callerRole)) return
+
+  const db = getPrivilegedClient(supabase)
+  const expiresAt = calculateExpiration(duration)?.toISOString() ?? null
+
+  const { error } = await db
+    .from("admin_broadcasts")
+    .update({
+      title: title || null,
+      message,
+      audience,
+      broadcast_type: broadcastType,
+      duration,
+      expires_at: expiresAt,
+    })
+    .eq("id", broadcastId)
+
+  if (error) {
+    const { error: fallbackError } = await db
+      .from("admin_broadcasts")
+      .update({
+        title: title || null,
+        message,
+        audience,
+        duration,
+        expires_at: expiresAt,
+      })
+      .eq("id", broadcastId)
+
+    if (fallbackError) {
+      await db
+        .from("admin_broadcasts")
+        .update({
+          title: title || null,
+          message,
+          audience,
+        })
+        .eq("id", broadcastId)
+    }
+  }
+
+  revalidateAdminRoutes()
+}
+
+export async function deleteBroadcast(formData: FormData): Promise<void> {
+  const broadcastId = (formData.get("broadcastId") as string | null)?.trim() ?? ""
+  if (!broadcastId) return
+
+  const { supabase, callerRole } = await getCallerRole()
+  if (!isAdminRole(callerRole)) return
+
+  const db = getPrivilegedClient(supabase)
+  await db.from("admin_broadcasts").delete().eq("id", broadcastId)
+
+  revalidateAdminRoutes()
+}
+
+export async function createMarketSymbol(formData: FormData): Promise<void> {
+  const symbol = normalizeMarketSymbol(formData.get("symbol") as string | null)
+  const displayName = ((formData.get("displayName") as string | null) ?? "").trim()
+  const sortOrder = normalizeSortOrder(formData.get("sortOrder") as string | null)
+  const isActive = normalizeBoolean(formData.get("isActive") as string | null)
+
+  if (!symbol) return
+
+  const { supabase, callerRole, userId } = await getCallerRole()
+  if (!isAdminRole(callerRole) || !userId) return
+
+  const db = getPrivilegedClient(supabase)
+  await db.from("market_symbols").insert({
+    symbol,
+    display_name: displayName || symbol,
+    sort_order: sortOrder,
+    is_active: isActive,
+    created_by: userId,
+    updated_by: userId,
+  })
+
+  revalidateAdminRoutes()
+}
+
+export async function updateMarketSymbol(formData: FormData): Promise<void> {
+  const id = ((formData.get("id") as string | null) ?? "").trim()
+  const symbol = normalizeMarketSymbol(formData.get("symbol") as string | null)
+  const displayName = ((formData.get("displayName") as string | null) ?? "").trim()
+  const sortOrder = normalizeSortOrder(formData.get("sortOrder") as string | null)
+  const isActive = normalizeBoolean(formData.get("isActive") as string | null)
+
+  if (!id || !symbol) return
+
+  const { supabase, callerRole, userId } = await getCallerRole()
+  if (!isAdminRole(callerRole) || !userId) return
+
+  const db = getPrivilegedClient(supabase)
+  await db
+    .from("market_symbols")
+    .update({
+      symbol,
+      display_name: displayName || symbol,
+      sort_order: sortOrder,
+      is_active: isActive,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+
+  revalidateAdminRoutes()
+}
+
+export async function deleteMarketSymbol(formData: FormData): Promise<void> {
+  const id = ((formData.get("id") as string | null) ?? "").trim()
+  if (!id) return
+
+  const { supabase, callerRole } = await getCallerRole()
+  if (!isAdminRole(callerRole)) return
+
+  const db = getPrivilegedClient(supabase)
+  await db.from("market_symbols").delete().eq("id", id)
+
+  revalidateAdminRoutes()
 }
 
 function normalizeBoolean(value: string | null) {

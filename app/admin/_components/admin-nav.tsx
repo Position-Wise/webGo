@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 const ADMIN_NAV_ITEMS = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/broadcast", label: "Broadcast" },
+  { href: "/admin/market-data", label: "Market Data" },
   { href: "/admin/subscriptions", label: "Subscriptions" },
   { href: "/admin/plans", label: "Plans" },
   { href: "/admin/users", label: "Users" },
