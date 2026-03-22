@@ -14,16 +14,9 @@ const ROUTES_TO_REVALIDATE = [
   "/admin/subscriptions",
 ] as const;
 
-type SubmitSubscriptionRequestInput = {
-  planId: string;
-  paymentProof: string;
-};
-
-type PlanLookupRow = {
-  id: string;
-  name?: string | null;
-  is_public?: boolean | null;
-};
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 export async function submitSubscriptionRequest(formData: FormData) {
   const supabase = await createSupabaseServerClient();
@@ -36,30 +29,52 @@ export async function submitSubscriptionRequest(formData: FormData) {
     return { error: "Not authenticated" };
   }
 
-  const planId = formData.get("planId") as string;
-  const file = formData.get("payment_proof") as File;
+  const planIdRaw = formData.get("planId");
+  const planId = isNonEmptyString(planIdRaw) ? planIdRaw.trim() : "";
 
-  if (!file) {
+  if (!planId) {
+    return { error: "Please select a plan." };
+  }
+
+  const fileInput = formData.get("payment_proof");
+  const proofFile = fileInput instanceof File ? fileInput : null;
+  const hasNewProofFile = Boolean(proofFile && proofFile.size > 0);
+  const reuseExistingProof =
+    ((formData.get("reuseExistingProof") as string | null) ?? "").trim().toLowerCase() ===
+    "true";
+
+  let paymentProofUrl: string | null = null;
+
+  if (hasNewProofFile && proofFile) {
+    const fileExt = proofFile.name.split(".").pop() || "png";
+    const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("payment-proofs")
+      .upload(filePath, proofFile);
+
+    if (uploadError) {
+      return { error: uploadError.message };
+    }
+
+    const { data } = supabase.storage.from("payment-proofs").getPublicUrl(filePath);
+    paymentProofUrl = data.publicUrl;
+  } else if (reuseExistingProof) {
+    const { data: existingSubmission } = await supabase
+      .from("user_subscriptions")
+      .select("payment_proof")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const existingProofUrl = (existingSubmission?.payment_proof ?? "").trim();
+    if (!existingProofUrl) {
+      return { error: "No existing payment proof found. Please upload a screenshot." };
+    }
+
+    paymentProofUrl = existingProofUrl;
+  } else {
     return { error: "Payment proof required" };
   }
-
-  const fileExt = file.name.split(".").pop();
-
-  const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("payment-proofs")
-    .upload(filePath, file);
-
-  if (uploadError) {
-    return { error: uploadError.message };
-  }
-
-  const { data } = supabase.storage
-    .from("payment-proofs")
-    .getPublicUrl(filePath);
-
-  const paymentProofUrl = data.publicUrl;
 
   const { error: dbError } = await supabase.from("user_subscriptions").upsert(
     {
@@ -69,7 +84,7 @@ export async function submitSubscriptionRequest(formData: FormData) {
       status: "pending",
       submitted_at: new Date().toISOString(),
     },
-    { onConflict: "user_id" },
+    { onConflict: "user_id" }
   );
 
   if (dbError) {

@@ -102,7 +102,7 @@ export default async function WaitingPage() {
                 <Link href="/profile">View profile</Link>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <Link href="/subscribe">Edit submission</Link>
+                <Link href="/subscribe?mode=edit">Edit submission</Link>
               </Button>
             </div>
           </CardContent>
@@ -111,3 +111,4 @@ export default async function WaitingPage() {
     </main>
   )
 }
+

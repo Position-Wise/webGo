@@ -10,11 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const dynamic = "force-dynamic"
 
-function getStartOfWeekIso() {
+function getStartOfMonthIso() {
   const now = new Date()
-  const dayOfWeek = now.getUTCDay()
-  const mondayOffset = (dayOfWeek + 6) % 7
-  now.setUTCDate(now.getUTCDate() - mondayOffset)
+  now.setUTCDate(1)
   now.setUTCHours(0, 0, 0, 0)
   return now.toISOString()
 }
@@ -24,21 +22,21 @@ async function fetchUsageByUser(profiles: ProfileRow[]) {
     .map((profile) => profile.id)
     .filter((id): id is string => Boolean(id))
 
-  if (!userIds.length) return {} as Record<string, { tradesUsedThisWeek: number; broadcastsSeen: number }>
+  if (!userIds.length) return {} as Record<string, { tradesUsedThisMonth: number; broadcastsSeen: number }>
 
   const db = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
-  const startOfWeek = getStartOfWeekIso()
+  const startOfMonth = getStartOfMonthIso()
   const { data, error } = await db
     .from("trade_usage")
     .select("user_id,broadcast_id,created_at")
     .in("user_id", userIds)
-    .gte("created_at", startOfWeek)
+    .gte("created_at", startOfMonth)
 
   if (error || !data?.length) {
-    return {} as Record<string, { tradesUsedThisWeek: number; broadcastsSeen: number }>
+    return {} as Record<string, { tradesUsedThisMonth: number; broadcastsSeen: number }>
   }
 
-  const usageByUser: Record<string, { tradesUsedThisWeek: number; broadcastsSeen: number }> = {}
+  const usageByUser: Record<string, { tradesUsedThisMonth: number; broadcastsSeen: number }> = {}
   const seenByUser: Record<string, Set<string>> = {}
 
   for (const row of data as { user_id?: string | null; broadcast_id?: string | null }[]) {
@@ -47,17 +45,17 @@ async function fetchUsageByUser(profiles: ProfileRow[]) {
 
     if (!usageByUser[userId]) {
       usageByUser[userId] = {
-        tradesUsedThisWeek: 0,
+        tradesUsedThisMonth: 0,
         broadcastsSeen: 0,
       }
       seenByUser[userId] = new Set<string>()
     }
 
-    usageByUser[userId].tradesUsedThisWeek += 1
-
     if (row.broadcast_id) {
       seenByUser[userId].add(row.broadcast_id)
-      usageByUser[userId].broadcastsSeen = seenByUser[userId].size
+      const uniqueCount = seenByUser[userId].size
+      usageByUser[userId].tradesUsedThisMonth = uniqueCount
+      usageByUser[userId].broadcastsSeen = uniqueCount
     }
   }
 

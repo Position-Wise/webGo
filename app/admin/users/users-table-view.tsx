@@ -31,7 +31,7 @@ import {
 import { toast } from "sonner"
 
 type UsageStats = {
-  tradesUsedThisWeek: number
+  tradesUsedThisMonth: number
   broadcastsSeen: number
 }
 
@@ -154,7 +154,7 @@ function formatDate(value: string | null) {
 }
 
 function getUsage(usageByUser: Record<string, UsageStats>, userId: string) {
-  return usageByUser[userId] ?? { tradesUsedThisWeek: 0, broadcastsSeen: 0 }
+  return usageByUser[userId] ?? { tradesUsedThisMonth: 0, broadcastsSeen: 0 }
 }
 
 function UserEditDrawer({
@@ -302,7 +302,7 @@ function UserEditDrawer({
             <Input
               name="tradeUsage"
               type="number"
-              defaultValue={usage.tradesUsedThisWeek}
+              defaultValue={usage.tradesUsedThisMonth}
               min={0}
             />
           </div>
@@ -402,7 +402,7 @@ function UserViewDrawer({
               Activity
             </p>
             <p>
-              Trades used this week: {usage.tradesUsedThisWeek}
+              Trades used this month: {usage.tradesUsedThisMonth}
             </p>
             <p>
               Broadcasts seen: {usage.broadcastsSeen}
