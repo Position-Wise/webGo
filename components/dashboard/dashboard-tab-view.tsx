@@ -52,16 +52,53 @@ export default function DashboardTabView({
   broadcasts,
   allowTrade,
   allowInvestment,
+  tradeLimitPerMonth,
+  tradeConsumedThisMonth,
+  consumedTradeBroadcastIds,
 }: {
   broadcasts: DashboardBroadcast[]
   allowTrade: boolean
   allowInvestment: boolean
+  tradeLimitPerMonth: number
+  tradeConsumedThisMonth: number
+  consumedTradeBroadcastIds: string[]
 }) {
   const router = useRouter()
   const [feedbackOverrides, setFeedbackOverrides] = useState<
     Record<string, "profit" | "loss">
   >({})
   const [pendingFeedbackKey, setPendingFeedbackKey] = useState<string | null>(null)
+  const [newlyConsumedTradeIds, setNewlyConsumedTradeIds] = useState<Record<string, true>>({})
+  const [isTradeUsagePending, setIsTradeUsagePending] = useState(false)
+
+  const initialConsumedTradeSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const value of consumedTradeBroadcastIds) {
+      const normalized = value.trim()
+      if (!normalized) continue
+      set.add(normalized)
+    }
+    return set
+  }, [consumedTradeBroadcastIds])
+
+  const consumedTradeSet = useMemo(() => {
+    const set = new Set(initialConsumedTradeSet)
+    for (const value of Object.keys(newlyConsumedTradeIds)) {
+      set.add(value)
+    }
+    return set
+  }, [initialConsumedTradeSet, newlyConsumedTradeIds])
+
+  const consumedTradeCount = useMemo(
+    () => tradeConsumedThisMonth + Object.keys(newlyConsumedTradeIds).length,
+    [newlyConsumedTradeIds, tradeConsumedThisMonth]
+  )
+
+  const effectiveTradeLimit = useMemo(
+    () => Math.max(0, Math.floor(tradeLimitPerMonth)),
+    [tradeLimitPerMonth]
+  )
+
   const availableTabs = useMemo(() => {
     return DASHBOARD_TABS.filter((tab) => {
       if (tab.key === "invest") return allowInvestment
@@ -81,7 +118,7 @@ export default function DashboardTabView({
     return "announcement"
   }, [allowInvestment, allowTrade, availableTabs, selectedTab])
 
-  const visibleBroadcasts = useMemo(() => {
+  const tabFilteredBroadcasts = useMemo(() => {
     if (!availableTabs.length) return []
 
     return broadcasts.filter((broadcast) => {
@@ -117,6 +154,102 @@ export default function DashboardTabView({
       return broadcastType === "investment"
     })
   }, [activeTab, allowInvestment, allowTrade, availableTabs.length, broadcasts])
+
+  const tradeTabResult = useMemo(() => {
+    if (activeTab !== "trade") {
+      return {
+        visible: tabFilteredBroadcasts,
+        hiddenCount: 0,
+        remainingSlots: Math.max(0, effectiveTradeLimit - consumedTradeCount),
+        loggableIds: [] as string[],
+      }
+    }
+
+    let remainingSlots = Math.max(0, effectiveTradeLimit - consumedTradeCount)
+    let hiddenCount = 0
+    const visible: DashboardBroadcast[] = []
+    const loggableIds: string[] = []
+
+    for (const broadcast of tabFilteredBroadcasts) {
+      const alreadyConsumed = consumedTradeSet.has(broadcast.id)
+      if (alreadyConsumed) {
+        visible.push(broadcast)
+        continue
+      }
+
+      if (remainingSlots > 0) {
+        visible.push(broadcast)
+        loggableIds.push(broadcast.id)
+        remainingSlots -= 1
+        continue
+      }
+
+      hiddenCount += 1
+    }
+
+    return {
+      visible,
+      hiddenCount,
+      remainingSlots,
+      loggableIds,
+    }
+  }, [
+    activeTab,
+    consumedTradeCount,
+    consumedTradeSet,
+    effectiveTradeLimit,
+    tabFilteredBroadcasts,
+  ])
+
+  const visibleBroadcasts = useMemo(() => {
+    return activeTab === "trade" ? tradeTabResult.visible : tabFilteredBroadcasts
+  }, [activeTab, tabFilteredBroadcasts, tradeTabResult.visible])
+
+  useEffect(() => {
+    if (activeTab !== "trade") return
+    if (!tradeTabResult.loggableIds.length) return
+
+    let isActive = true
+    setIsTradeUsagePending(true)
+
+    void fetch("/api/trade-usage", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        broadcastIds: tradeTabResult.loggableIds,
+      }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to update trade usage.")
+        }
+
+        if (!isActive) return
+
+        setNewlyConsumedTradeIds((current) => {
+          const next = { ...current }
+          for (const id of tradeTabResult.loggableIds) {
+            if (initialConsumedTradeSet.has(id)) continue
+            next[id] = true
+          }
+          return next
+        })
+      })
+      .catch((error) => {
+        console.error("Trade usage tracking error:", error)
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsTradeUsagePending(false)
+        }
+      })
+
+    return () => {
+      isActive = false
+    }
+  }, [activeTab, initialConsumedTradeSet, tradeTabResult.loggableIds])
 
   async function submitFeedback(broadcastId: string, outcome: "profit" | "loss") {
     const pendingKey = `${broadcastId}:${outcome}`
@@ -232,10 +365,38 @@ export default function DashboardTabView({
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
+          {activeTab === "trade" && allowTrade ? (
+            <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
+              <p>
+                Trade calls used this month: {consumedTradeCount}/{effectiveTradeLimit}
+              </p>
+              {tradeTabResult.remainingSlots === 0 && tradeTabResult.hiddenCount > 0 ? (
+                <p className="mt-1 text-destructive">
+                  You have used your trade-call limit for this month. Upgrade your plan or
+                  check again next month.
+                </p>
+              ) : null}
+              {isTradeUsagePending ? (
+                <p className="mt-1">
+                  Updating usage...
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {!visibleBroadcasts.length ? (
-            <p className="text-sm text-muted-foreground">
-              No admin broadcast available for this tab yet.
-            </p>
+            activeTab === "trade" &&
+            allowTrade &&
+            tradeTabResult.hiddenCount > 0 &&
+            tradeTabResult.remainingSlots === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Trade-call limit reached for this month.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No admin broadcast available for this tab yet.
+              </p>
+            )
           ) : (
             visibleBroadcasts.map((broadcast) => (
               <article
@@ -249,6 +410,10 @@ export default function DashboardTabView({
                   const isLossActive = feedback === "loss"
                   const isPending =
                     pendingFeedbackKey?.startsWith(`${broadcast.id}:`) ?? false
+                  const showOutcomeButtons =
+                    (broadcast.broadcast_type ?? "investment") !== "announcement"
+
+                  if (!showOutcomeButtons) return null
 
                   return (
                     <div className="mb-3 flex flex-wrap gap-2">

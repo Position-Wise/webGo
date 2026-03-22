@@ -49,6 +49,10 @@ type BroadcastFeedbackRow = {
   outcome?: string | null
 }
 
+type TradeUsageRow = {
+  broadcast_id?: string | null
+}
+
 function normalizePlanName(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase()
   if (normalized === "pro" || normalized === "growth") return "pro"
@@ -90,6 +94,20 @@ function normalizeMarketSymbol(value: string | null | undefined) {
   return normalized
 }
 
+function getStartOfMonthIso() {
+  const current = new Date()
+  current.setUTCDate(1)
+  current.setUTCHours(0, 0, 0, 0)
+  return current.toISOString()
+}
+
+function defaultTradeLimitPerMonth(planName: string) {
+  if (planName === "new" || planName === "basic") return 0
+  if (planName === "pro") return 2
+  if (planName === "premium" || planName === "admin") return 99
+  return 0
+}
+
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient()
   const access = await getCurrentUserAccessState(supabase)
@@ -124,14 +142,22 @@ export default async function DashboardPage() {
   }
 
   const normalizedPlan = normalizePlanName(planRow?.name ?? fallbackPlanName)
-  const allowTrade =
+  const isApprovedAccess = access.accessState === "approved"
+  const baseAllowTrade =
     typeof planRow?.allow_trade === "boolean"
       ? planRow.allow_trade
       : defaultAllowTrade(normalizedPlan)
-  const allowInvestment =
+  const baseAllowInvestment =
     typeof planRow?.allow_investment === "boolean"
       ? planRow.allow_investment
       : defaultAllowInvestment(normalizedPlan)
+  const planTradeLimit =
+    typeof planRow?.trade_limit_per_week === "number"
+      ? Math.max(0, Math.floor(planRow.trade_limit_per_week))
+      : defaultTradeLimitPerMonth(normalizedPlan)
+  const allowTrade = isApprovedAccess ? baseAllowTrade : false
+  const allowInvestment = isApprovedAccess ? baseAllowInvestment : false
+  const tradeLimitPerMonth = allowTrade ? planTradeLimit : 0
   const audienceKeys = getPlanAudienceKeys(normalizedPlan)
 
   const nowIso = new Date().toISOString()
@@ -234,6 +260,27 @@ export default async function DashboardPage() {
     user_feedback: feedbackByBroadcast[broadcast.id] ?? null,
   }))
 
+  const consumedTradeBroadcastIds: string[] = []
+  let tradeConsumedThisMonth = 0
+
+  if (tradeLimitPerMonth > 0) {
+    const { data: usageRows } = await supabase
+      .from("trade_usage")
+      .select("broadcast_id")
+      .eq("user_id", user.id)
+      .gte("created_at", getStartOfMonthIso())
+
+    const consumedSet = new Set<string>()
+    for (const row of (usageRows as TradeUsageRow[] | null) ?? []) {
+      const broadcastId = (row.broadcast_id ?? "").trim()
+      if (!broadcastId) continue
+      consumedSet.add(broadcastId)
+    }
+
+    consumedTradeBroadcastIds.push(...consumedSet)
+    tradeConsumedThisMonth = consumedSet.size
+  }
+
   const { data: marketRows } = await supabase
     .from("market_symbols")
     .select("symbol,display_name,is_active,sort_order")
@@ -312,6 +359,9 @@ export default async function DashboardPage() {
             broadcasts={broadcastsWithFeedback}
             allowTrade={allowTrade}
             allowInvestment={allowInvestment}
+            tradeLimitPerMonth={tradeLimitPerMonth}
+            tradeConsumedThisMonth={tradeConsumedThisMonth}
+            consumedTradeBroadcastIds={consumedTradeBroadcastIds}
           />
         </div>
       </section>
