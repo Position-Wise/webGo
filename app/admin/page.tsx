@@ -12,7 +12,6 @@ import {
   toTitleCase,
 } from "./helpers"
 import { fetchAdminBroadcasts, fetchAdminProfiles } from "./queries"
-import { isSupabaseServiceRoleConfigured } from "@/lib/supabase/server"
 import {
   getAccessStateFromStatus,
   getAccessStateLabel,
@@ -29,8 +28,6 @@ export default async function AdminPage() {
     fetchAdminProfiles(),
     fetchAdminBroadcasts(12),
   ])
-  const hasServiceRole = isSupabaseServiceRoleConfigured()
-  const shouldShowPermissionHint = !hasServiceRole && profiles.length <= 1
 
   const totalMembers = profiles.length
   const activeCount = profiles.filter((profile) => {
@@ -58,14 +55,6 @@ export default async function AdminPage() {
 
   return (
     <section className="space-y-6">
-      {shouldShowPermissionHint ? (
-        <div className="rounded-lg border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Admin data is permission-limited right now. Add
-          ` SUPABASE_SERVICE_ROLE_KEY ` in `.env` or verify your Supabase RLS
-          policies allow admin users to view all members.
-        </div>
-      ) : null}
-
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Total members" value={totalMembers} />
         <MetricCard label="New users" value={newUserCount} />

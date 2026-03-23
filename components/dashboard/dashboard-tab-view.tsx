@@ -52,15 +52,15 @@ export default function DashboardTabView({
   broadcasts,
   allowTrade,
   allowInvestment,
-  tradeLimitPerMonth,
-  tradeConsumedThisMonth,
+  tradeLimitPerWeek,
+  tradeConsumedThisWeek,
   consumedTradeBroadcastIds,
 }: {
   broadcasts: DashboardBroadcast[]
   allowTrade: boolean
   allowInvestment: boolean
-  tradeLimitPerMonth: number
-  tradeConsumedThisMonth: number
+  tradeLimitPerWeek: number
+  tradeConsumedThisWeek: number
   consumedTradeBroadcastIds: string[]
 }) {
   const router = useRouter()
@@ -90,13 +90,13 @@ export default function DashboardTabView({
   }, [initialConsumedTradeSet, newlyConsumedTradeIds])
 
   const consumedTradeCount = useMemo(
-    () => tradeConsumedThisMonth + Object.keys(newlyConsumedTradeIds).length,
-    [newlyConsumedTradeIds, tradeConsumedThisMonth]
+    () => tradeConsumedThisWeek + Object.keys(newlyConsumedTradeIds).length,
+    [newlyConsumedTradeIds, tradeConsumedThisWeek]
   )
 
   const effectiveTradeLimit = useMemo(
-    () => Math.max(0, Math.floor(tradeLimitPerMonth)),
-    [tradeLimitPerMonth]
+    () => Math.max(0, Math.floor(tradeLimitPerWeek)),
+    [tradeLimitPerWeek]
   )
 
   const availableTabs = useMemo(() => {
@@ -268,7 +268,10 @@ export default function DashboardTabView({
       })
 
       if (!response.ok) {
-        throw new Error("Failed to save feedback.")
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string
+        } | null
+        throw new Error(payload?.error || "Failed to save feedback.")
       }
 
       setFeedbackOverrides((current) => ({
@@ -368,12 +371,12 @@ export default function DashboardTabView({
           {activeTab === "trade" && allowTrade ? (
             <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
               <p>
-                Trade calls used this month: {consumedTradeCount}/{effectiveTradeLimit}
+                Trade calls used this week: {consumedTradeCount}/{effectiveTradeLimit}
               </p>
               {tradeTabResult.remainingSlots === 0 && tradeTabResult.hiddenCount > 0 ? (
                 <p className="mt-1 text-destructive">
-                  You have used your trade-call limit for this month. Upgrade your plan or
-                  check again next month.
+                  You have used your trade-call limit for this week. Upgrade your plan or
+                  check again next week.
                 </p>
               ) : null}
               {isTradeUsagePending ? (
@@ -390,7 +393,7 @@ export default function DashboardTabView({
             tradeTabResult.hiddenCount > 0 &&
             tradeTabResult.remainingSlots === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Trade-call limit reached for this month.
+                Trade-call limit reached for this week.
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">

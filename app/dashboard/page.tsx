@@ -94,14 +94,16 @@ function normalizeMarketSymbol(value: string | null | undefined) {
   return normalized
 }
 
-function getStartOfMonthIso() {
+function getStartOfWeekIso() {
   const current = new Date()
-  current.setUTCDate(1)
+  const currentDay = current.getUTCDay()
+  const daysSinceMonday = (currentDay + 6) % 7
+  current.setUTCDate(current.getUTCDate() - daysSinceMonday)
   current.setUTCHours(0, 0, 0, 0)
   return current.toISOString()
 }
 
-function defaultTradeLimitPerMonth(planName: string) {
+function defaultTradeLimitPerWeek(planName: string) {
   if (planName === "new" || planName === "basic") return 0
   if (planName === "pro") return 2
   if (planName === "premium" || planName === "admin") return 99
@@ -154,10 +156,10 @@ export default async function DashboardPage() {
   const planTradeLimit =
     typeof planRow?.trade_limit_per_week === "number"
       ? Math.max(0, Math.floor(planRow.trade_limit_per_week))
-      : defaultTradeLimitPerMonth(normalizedPlan)
+      : defaultTradeLimitPerWeek(normalizedPlan)
   const allowTrade = isApprovedAccess ? baseAllowTrade : false
   const allowInvestment = isApprovedAccess ? baseAllowInvestment : false
-  const tradeLimitPerMonth = allowTrade ? planTradeLimit : 0
+  const tradeLimitPerWeek = allowTrade ? planTradeLimit : 0
   const audienceKeys = getPlanAudienceKeys(normalizedPlan)
 
   const nowIso = new Date().toISOString()
@@ -261,14 +263,14 @@ export default async function DashboardPage() {
   }))
 
   const consumedTradeBroadcastIds: string[] = []
-  let tradeConsumedThisMonth = 0
+  let tradeConsumedThisWeek = 0
 
-  if (tradeLimitPerMonth > 0) {
+  if (tradeLimitPerWeek > 0) {
     const { data: usageRows } = await supabase
       .from("trade_usage")
       .select("broadcast_id")
       .eq("user_id", user.id)
-      .gte("created_at", getStartOfMonthIso())
+      .gte("created_at", getStartOfWeekIso())
 
     const consumedSet = new Set<string>()
     for (const row of (usageRows as TradeUsageRow[] | null) ?? []) {
@@ -278,7 +280,7 @@ export default async function DashboardPage() {
     }
 
     consumedTradeBroadcastIds.push(...consumedSet)
-    tradeConsumedThisMonth = consumedSet.size
+    tradeConsumedThisWeek = consumedSet.size
   }
 
   const { data: marketRows } = await supabase
@@ -352,15 +354,15 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <LiveMarketBoard availableSymbols={availableMarketSymbols} />
+        {/* <LiveMarketBoard availableSymbols={availableMarketSymbols} /> */}
 
         <div>
           <DashboardTabView
             broadcasts={broadcastsWithFeedback}
             allowTrade={allowTrade}
             allowInvestment={allowInvestment}
-            tradeLimitPerMonth={tradeLimitPerMonth}
-            tradeConsumedThisMonth={tradeConsumedThisMonth}
+            tradeLimitPerWeek={tradeLimitPerWeek}
+            tradeConsumedThisWeek={tradeConsumedThisWeek}
             consumedTradeBroadcastIds={consumedTradeBroadcastIds}
           />
         </div>
