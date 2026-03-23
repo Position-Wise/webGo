@@ -2,7 +2,8 @@
 
 import { type FormEvent, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { updateUserAccessWithResult } from "../actions"
+import { Trash2 } from "lucide-react"
+import { deleteUserWithResult, updateUserAccessWithResult } from "../actions"
 import { ROLES, STATUSES, toTitleCase } from "../helpers"
 import type { ProfileRow, SubscriptionPlanRow } from "../types"
 import { Button } from "@/components/ui/button"
@@ -28,10 +29,11 @@ import {
   getAccessStateLabel,
   normalizeSubscriptionStatus,
 } from "@/lib/subscription-status"
+import { isAdminRole } from "@/lib/roles"
 import { toast } from "sonner"
 
 type UsageStats = {
-  tradesUsedThisMonth: number
+  tradesUsedThisWeek: number
   broadcastsSeen: number
 }
 
@@ -154,7 +156,7 @@ function formatDate(value: string | null) {
 }
 
 function getUsage(usageByUser: Record<string, UsageStats>, userId: string) {
-  return usageByUser[userId] ?? { tradesUsedThisMonth: 0, broadcastsSeen: 0 }
+  return usageByUser[userId] ?? { tradesUsedThisWeek: 0, broadcastsSeen: 0 }
 }
 
 function UserEditDrawer({
@@ -302,7 +304,7 @@ function UserEditDrawer({
             <Input
               name="tradeUsage"
               type="number"
-              defaultValue={usage.tradesUsedThisMonth}
+              defaultValue={usage.tradesUsedThisWeek}
               min={0}
             />
           </div>
@@ -402,7 +404,7 @@ function UserViewDrawer({
               Activity
             </p>
             <p>
-              Trades used this month: {usage.tradesUsedThisMonth}
+              Trades used this week: {usage.tradesUsedThisWeek}
             </p>
             <p>
               Broadcasts seen: {usage.broadcastsSeen}
@@ -411,6 +413,52 @@ function UserViewDrawer({
         </div>
       </DrawerContent>
     </Drawer>
+  )
+}
+
+function UserRemoveButton({ profile }: { profile: ProfileRow }) {
+  const router = useRouter()
+  const [isRemoving, startTransition] = useTransition()
+  const isProtectedAdmin = isAdminRole(profile.role ?? null)
+
+  function handleRemove() {
+    if (isRemoving || isProtectedAdmin) return
+
+    const userLabel = profile.full_name || profile.email || profile.id
+    const shouldDelete = window.confirm(
+      `Remove ${userLabel}? This permanently deletes the account and related data.`
+    )
+
+    if (!shouldDelete) return
+
+    startTransition(async () => {
+      try {
+        const result = await deleteUserWithResult(profile.id)
+        if (result.ok) {
+          toast.success("User removed from app records")
+          router.refresh()
+          return
+        }
+
+        toast.error(result.error ?? "Failed to remove user")
+      } catch {
+        toast.error("Unexpected error while removing user")
+      }
+    })
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="destructive"
+      size="icon-sm"
+      onClick={handleRemove}
+      disabled={isRemoving || isProtectedAdmin}
+      title={isProtectedAdmin ? "Admin accounts cannot be removed here" : "Remove user"}
+      aria-label="Remove user"
+    >
+      <Trash2 />
+    </Button>
   )
 }
 
@@ -563,6 +611,7 @@ export default function UsersTableView({
                         planNameById={planNameById}
                         usage={usage}
                       />
+                      <UserRemoveButton profile={profile} />
                     </div>
                   </TableCell>
                 </TableRow>

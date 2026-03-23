@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server"
-import {
-  createSupabaseServerClient,
-  createSupabaseServiceRoleClient,
-} from "@/lib/supabase/server"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 
 type TradeUsagePayload = {
   broadcastIds?: unknown
@@ -12,9 +9,11 @@ type TradeUsageRow = {
   broadcast_id?: string | null
 }
 
-function getStartOfMonthIso() {
+function getStartOfWeekIso() {
   const date = new Date()
-  date.setUTCDate(1)
+  const currentDay = date.getUTCDay()
+  const daysSinceMonday = (currentDay + 6) % 7
+  date.setUTCDate(date.getUTCDate() - daysSinceMonday)
   date.setUTCHours(0, 0, 0, 0)
   return date.toISOString()
 }
@@ -57,14 +56,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, inserted: 0 })
   }
 
-  const db = createSupabaseServiceRoleClient() ?? supabase
-  const monthStartIso = getStartOfMonthIso()
+  const db = supabase
+  const weekStartIso = getStartOfWeekIso()
 
   const { data: existingRows, error: existingError } = await db
     .from("trade_usage")
     .select("broadcast_id")
     .eq("user_id", user.id)
-    .gte("created_at", monthStartIso)
+    .gte("created_at", weekStartIso)
     .in("broadcast_id", broadcastIds)
 
   if (existingError) {

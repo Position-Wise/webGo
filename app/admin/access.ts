@@ -1,7 +1,4 @@
-import {
-  createSupabaseServerClient,
-  createSupabaseServiceRoleClient,
-} from "@/lib/supabase/server"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 
 export type MinimalDbClient = {
   from: (table: string) => {
@@ -61,26 +58,12 @@ export async function resolveRoleForUser(
   userId: string,
   fallbackClient?: MinimalDbClient
 ) {
-  const clients: MinimalDbClient[] = []
+  const client = fallbackClient
+    ? fallbackClient
+    : ((await createSupabaseServerClient()) as unknown as MinimalDbClient)
 
-  if (fallbackClient) {
-    clients.push(fallbackClient)
-  } else {
-    clients.push((await createSupabaseServerClient()) as unknown as MinimalDbClient)
-  }
+  const profilesRole = await fetchRoleFromProfilesTable(client, userId)
+  if (profilesRole) return profilesRole
 
-  const serviceRoleClient = createSupabaseServiceRoleClient()
-  if (serviceRoleClient) {
-    clients.push(serviceRoleClient as unknown as MinimalDbClient)
-  }
-
-  for (const client of clients) {
-    const profilesRole = await fetchRoleFromProfilesTable(client, userId)
-    if (profilesRole) return profilesRole
-
-    const profileRole = await fetchRoleFromProfileTable(client, userId)
-    if (profileRole) return profileRole
-  }
-
-  return null
+  return fetchRoleFromProfileTable(client, userId)
 }

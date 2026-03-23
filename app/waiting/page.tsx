@@ -36,6 +36,15 @@ export default async function WaitingPage() {
     redirect("/dashboard")
   }
 
+  const hasSubmissionEvidence = Boolean(
+    (access.subscription?.payment_proof ?? "").trim() ||
+      (access.subscription?.submitted_at ?? "").trim()
+  )
+
+  if (access.accessState === "waiting" && !hasSubmissionEvidence) {
+    redirect("/subscribe")
+  }
+
   if (access.accessState !== "waiting") {
     redirect("/subscribe")
   }
@@ -111,4 +120,5 @@ export default async function WaitingPage() {
     </main>
   )
 }
+
 

@@ -1,4 +1,4 @@
-import { deleteBroadcast, publishBroadcast, updateBroadcast } from "../actions"
+import { publishBroadcast } from "../actions"
 import {
   BROADCAST_AUDIENCES,
   BROADCAST_DURATIONS,
@@ -10,6 +10,8 @@ import {
   toDurationLabel,
 } from "../helpers"
 import { fetchAdminBroadcasts, fetchBroadcastFeedbackSummary } from "../queries"
+import BroadcastCardActions from "./broadcast-card-actions"
+import BroadcastFeedbackLiveRefresh from "./broadcast-feedback-live-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import LoadingSubmitButton from "@/components/ui/loading-submit-button"
@@ -24,6 +26,8 @@ export default async function AdminBroadcastPage() {
 
   return (
     <section className="space-y-6">
+      <BroadcastFeedbackLiveRefresh />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -180,110 +184,16 @@ export default async function AdminBroadcastPage() {
                 <p className="mt-2 text-xs text-muted-foreground">
                   Posted by {getBroadcastAuthorName(broadcast.profiles) || "Admin"}
                 </p>
-
-                <details className="mt-3 rounded-md border border-border/70 bg-background/60 p-3">
-                  <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Edit broadcast
-                  </summary>
-
-                  <form action={updateBroadcast} className="mt-3 space-y-3">
-                    <input type="hidden" name="broadcastId" value={broadcast.id} />
-
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Target audience
-                        </label>
-                        <select
-                          name="audience"
-                          defaultValue={broadcast.audience ?? "all"}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                          {BROADCAST_AUDIENCES.map((audience) => (
-                            <option key={audience} value={audience}>
-                              {toAudienceLabel(audience)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Broadcast type
-                        </label>
-                        <select
-                          name="broadcastType"
-                          defaultValue={broadcast.broadcast_type ?? "investment"}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                          {BROADCAST_TYPES.map((type) => (
-                            <option key={type} value={type}>
-                              {toBroadcastTypeLabel(type)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Display duration
-                        </label>
-                        <select
-                          name="duration"
-                          defaultValue={broadcast.duration ?? "forever"}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                          {BROADCAST_DURATIONS.map((duration) => (
-                            <option key={duration} value={duration}>
-                              {toDurationLabel(duration)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                        Title (optional)
-                      </label>
-                      <Input
-                        name="title"
-                        defaultValue={broadcast.title ?? ""}
-                        maxLength={120}
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                        Message
-                      </label>
-                      <textarea
-                        name="message"
-                        required
-                        rows={4}
-                        defaultValue={broadcast.message}
-                        maxLength={1000}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                      />
-                    </div>
-
-                    <LoadingSubmitButton type="submit" size="sm" pendingText="Saving...">
-                      Save changes
-                    </LoadingSubmitButton>
-                  </form>
-                </details>
-
-                <form action={deleteBroadcast} className="mt-3">
-                  <input type="hidden" name="broadcastId" value={broadcast.id} />
-                  <LoadingSubmitButton
-                    type="submit"
-                    size="sm"
-                    variant="destructive"
-                    pendingText="Deleting..."
-                  >
-                    Delete broadcast
-                  </LoadingSubmitButton>
-                </form>
+                <BroadcastCardActions
+                  broadcast={{
+                    id: broadcast.id,
+                    audience: broadcast.audience,
+                    broadcast_type: broadcast.broadcast_type ?? "investment",
+                    duration: broadcast.duration ?? "forever",
+                    title: broadcast.title,
+                    message: broadcast.message,
+                  }}
+                />
               </article>
             ))
           )}

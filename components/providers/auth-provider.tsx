@@ -16,6 +16,8 @@ type ProfileQueryRow = {
   role?: string | null
   user_subscriptions?: {
     status?: string | null
+    payment_proof?: string | null
+    submitted_at?: string | null
     subscription_plans?: {
       name?: string | null
     }[]
@@ -40,9 +42,15 @@ function toProfileInfo(profileRow: ProfileQueryRow | null): ProfileInfo {
   const role = profileRow.role ?? null
   const subscription = profileRow.user_subscriptions?.[0]
   const plan = isAdminRole(role) ? "admin" : subscription?.subscription_plans?.[0]?.name ?? null
+  const normalizedStatus = normalizeSubscriptionStatus(subscription?.status ?? null)
+  const hasSubmissionEvidence = Boolean(
+    (subscription?.payment_proof ?? "").trim() || (subscription?.submitted_at ?? "").trim()
+  )
   const status = isAdminRole(role)
     ? "active"
-    : normalizeSubscriptionStatus(subscription?.status ?? null)
+    : normalizedStatus === "pending" && !hasSubmissionEvidence
+      ? null
+      : normalizedStatus
 
   return {
     role,
@@ -56,6 +64,8 @@ async function fetchProfileRowForUser(userId: string) {
       role,
       user_subscriptions (
         status,
+        payment_proof,
+        submitted_at,
         subscription_plans (
           name
         )

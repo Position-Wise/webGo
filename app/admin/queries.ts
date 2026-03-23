@@ -1,6 +1,5 @@
 import {
   createSupabaseServerClient,
-  createSupabaseServiceRoleClient,
 } from "@/lib/supabase/server"
 import { isAdminRole } from "@/lib/roles"
 import type {
@@ -199,7 +198,7 @@ async function fetchProfilesFromProfileTable(
 }
 
 export async function fetchAdminProfiles() {
-  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const supabase = await createSupabaseServerClient()
 
   const profilesTableRows = await fetchProfilesFromProfilesTable(supabase)
 
@@ -217,7 +216,7 @@ export async function fetchAdminProfiles() {
 }
 
 export async function fetchAdminSubscriptionPlans() {
-  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const supabase = await createSupabaseServerClient()
 
   const { data } = await supabase
     .from("subscription_plans")
@@ -231,7 +230,7 @@ export async function fetchAdminSubscriptionPlans() {
 }
 
 export async function fetchAdminPlanSettings() {
-  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const supabase = await createSupabaseServerClient()
 
   const { data } = await supabase
     .from("subscription_plans")
@@ -245,7 +244,7 @@ export async function fetchAdminPlanSettings() {
 }
 
 export async function fetchAdminBroadcasts(limit = 20) {
-  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const supabase = await createSupabaseServerClient()
   const nowIso = new Date().toISOString()
   const broadcastSelect = `
       id,
@@ -296,7 +295,7 @@ export async function fetchAdminBroadcasts(limit = 20) {
 }
 
 export async function fetchAdminMarketSymbols() {
-  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const supabase = await createSupabaseServerClient()
 
   const { data } = await supabase
     .from("market_symbols")
@@ -311,7 +310,7 @@ export async function fetchAdminMarketSymbols() {
 }
 
 export async function fetchBroadcastFeedbackSummary(broadcastIds?: string[]) {
-  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient())
+  const supabase = await createSupabaseServerClient()
   const normalizedIds = (broadcastIds ?? []).map((id) => id.trim()).filter(Boolean)
 
   let query = supabase
@@ -322,7 +321,11 @@ export async function fetchBroadcastFeedbackSummary(broadcastIds?: string[]) {
     query = query.in("broadcast_id", normalizedIds)
   }
 
-  const { data } = await query
+  const { data, error } = await query
+  if (error) {
+    console.error("Broadcast feedback summary query failed:", error)
+    return {}
+  }
 
   const summary: Record<
     string,

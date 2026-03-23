@@ -1,10 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import {
-  createSupabaseServerClient,
-  createSupabaseServiceRoleClient,
-} from "@/lib/supabase/server"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { isAdminRole } from "@/lib/roles"
 import {
   BROADCAST_AUDIENCES,
@@ -88,10 +85,6 @@ async function getCallerRole() {
     )) ?? null
 
   return { supabase, callerRole, userId: user.id }
-}
-
-function getPrivilegedClient(fallbackClient: Awaited<ReturnType<typeof createSupabaseServerClient>>) {
-  return createSupabaseServiceRoleClient() ?? fallbackClient
 }
 
 function hasColumn(row: Record<string, unknown>, column: string) {
@@ -211,6 +204,13 @@ type UpdateUserAccessResult =
       error: string
     }
 
+type DeleteUserResult =
+  | { ok: true }
+  | {
+      ok: false
+      error: string
+    }
+
 async function updateUserAccessInternal(formData: FormData): Promise<UpdateUserAccessResult> {
   const userId = formData.get("userId") as string | null
   const targetRole = normalizeRole(formData.get("role") as string | null)
@@ -248,7 +248,7 @@ async function updateUserAccessInternal(formData: FormData): Promise<UpdateUserA
     return { ok: false, error: "Only admins can update users." }
   }
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
 
   if (targetRole) {
     const { error: roleError } = await db
@@ -337,6 +337,196 @@ export async function updateUserAccessWithResult(
   return updateUserAccessInternal(formData)
 }
 
+type UserDeleteCleanupStep = {
+  table: string
+  column: string
+}
+
+const USER_DELETE_CLEANUP_STEPS: UserDeleteCleanupStep[] = [
+  { table: "trade_usage", column: "user_id" },
+  { table: "broadcast_feedback", column: "user_id" },
+  { table: "user_subscriptions", column: "user_id" },
+  { table: "profiles", column: "id" },
+  { table: "profiles", column: "user_id" },
+  { table: "profile", column: "id" },
+  { table: "profile", column: "user_id" },
+]
+
+function normalizeUserId(value: string | null | undefined) {
+  return (value ?? "").trim()
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === "string" && message.trim()) {
+      return message
+    }
+  }
+  return fallback
+}
+
+function isMissingSchemaError(error: unknown) {
+  const message = getErrorMessage(error, "").toLowerCase()
+  return (
+    (message.includes("relation") && message.includes("does not exist")) ||
+    (message.includes("table") && message.includes("not found")) ||
+    (message.includes("column") && message.includes("does not exist")) ||
+    (message.includes("bucket") && message.includes("not found"))
+  )
+}
+
+async function deletePaymentProofObjectsForUser(
+  db: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string
+): Promise<DeleteUserResult> {
+  const bucket = db.storage.from("payment-proofs")
+  const limit = 100
+  let offset = 0
+  const objectPaths: string[] = []
+
+  while (offset <= 5000) {
+    const { data, error } = await bucket.list(userId, {
+      limit,
+      offset,
+    })
+
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        return { ok: true }
+      }
+      return {
+        ok: false,
+        error: getErrorMessage(error, "Failed to load user payment proof files."),
+      }
+    }
+
+    const rows = Array.isArray(data) ? data : []
+    if (!rows.length) {
+      break
+    }
+
+    rows.forEach((row) => {
+      const name = typeof row.name === "string" ? row.name.trim() : ""
+      if (!name) return
+      objectPaths.push(`${userId}/${name}`)
+    })
+
+    if (rows.length < limit) {
+      break
+    }
+
+    offset += limit
+  }
+
+  if (!objectPaths.length) {
+    return { ok: true }
+  }
+
+  for (let index = 0; index < objectPaths.length; index += 100) {
+    const batch = objectPaths.slice(index, index + 100)
+    const { error } = await bucket.remove(batch)
+
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        continue
+      }
+      return {
+        ok: false,
+        error: getErrorMessage(error, "Failed to delete user payment proof files."),
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+async function deleteRowsByUserReference(
+  db: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  step: UserDeleteCleanupStep,
+  userId: string
+): Promise<DeleteUserResult> {
+  const { error } = await db
+    .from(step.table)
+    .delete()
+    .eq(step.column, userId)
+
+  if (error) {
+    if (isMissingSchemaError(error)) {
+      return { ok: true }
+    }
+    return {
+      ok: false,
+      error: getErrorMessage(
+        error,
+        `Failed to delete user data from ${step.table}.`
+      ),
+    }
+  }
+
+  return { ok: true }
+}
+
+export async function deleteUserWithResult(userId: string): Promise<DeleteUserResult> {
+  const targetUserId = normalizeUserId(userId)
+  if (!targetUserId) {
+    return { ok: false, error: "Missing user id." }
+  }
+
+  const { supabase, callerRole, userId: callerUserId } = await getCallerRole()
+  if (!isAdminRole(callerRole)) {
+    return { ok: false, error: "Only admins can remove users." }
+  }
+
+  if (callerUserId && callerUserId === targetUserId) {
+    return { ok: false, error: "You cannot remove your own account." }
+  }
+
+  const db = supabase
+
+  const targetRole = await resolveRoleForUser(
+    targetUserId,
+    db as unknown as MinimalDbClient
+  )
+
+  if (isAdminRole(targetRole)) {
+    return {
+      ok: false,
+      error: "Removing admin accounts is blocked from this panel.",
+    }
+  }
+
+  const storageDeleteResult = await deletePaymentProofObjectsForUser(
+    db as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    targetUserId
+  )
+  if (!storageDeleteResult.ok) {
+    return storageDeleteResult
+  }
+
+  for (const step of USER_DELETE_CLEANUP_STEPS) {
+    const cleanupResult = await deleteRowsByUserReference(
+      db as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+      step,
+      targetUserId
+    )
+    if (!cleanupResult.ok) {
+      return cleanupResult
+    }
+  }
+
+  const { error: authDeleteError } = await db.auth.admin.deleteUser(targetUserId)
+  if (authDeleteError) {
+    console.warn(
+      "Auth account deletion skipped. Remove user manually from Supabase Auth:",
+      getErrorMessage(authDeleteError, "Insufficient permissions.")
+    )
+  }
+
+  revalidateAdminRoutes()
+  return { ok: true }
+}
+
 export async function publishBroadcast(formData: FormData): Promise<void> {
   const title = (formData.get("title") as string | null)?.trim() ?? ""
   const message = (formData.get("message") as string | null)?.trim() ?? ""
@@ -352,7 +542,7 @@ export async function publishBroadcast(formData: FormData): Promise<void> {
 
   if (!isAdminRole(callerRole) || !userId) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   const expiresAt = calculateExpiration(duration)
 
   const insertPayload = {
@@ -422,7 +612,7 @@ export async function updateBroadcast(formData: FormData): Promise<void> {
   const { supabase, callerRole } = await getCallerRole()
   if (!isAdminRole(callerRole)) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   const expiresAt = calculateExpiration(duration)?.toISOString() ?? null
 
   const { error } = await db
@@ -471,7 +661,7 @@ export async function deleteBroadcast(formData: FormData): Promise<void> {
   const { supabase, callerRole } = await getCallerRole()
   if (!isAdminRole(callerRole)) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   await db.from("admin_broadcasts").delete().eq("id", broadcastId)
 
   revalidateAdminRoutes()
@@ -488,7 +678,7 @@ export async function createMarketSymbol(formData: FormData): Promise<void> {
   const { supabase, callerRole, userId } = await getCallerRole()
   if (!isAdminRole(callerRole) || !userId) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   await db.from("market_symbols").insert({
     symbol,
     display_name: displayName || symbol,
@@ -513,7 +703,7 @@ export async function updateMarketSymbol(formData: FormData): Promise<void> {
   const { supabase, callerRole, userId } = await getCallerRole()
   if (!isAdminRole(callerRole) || !userId) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   await db
     .from("market_symbols")
     .update({
@@ -536,7 +726,7 @@ export async function deleteMarketSymbol(formData: FormData): Promise<void> {
   const { supabase, callerRole } = await getCallerRole()
   if (!isAdminRole(callerRole)) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   await db.from("market_symbols").delete().eq("id", id)
 
   revalidateAdminRoutes()
@@ -566,7 +756,7 @@ async function updatePlanPermissions(params: {
 
   if (!isAdminRole(callerRole)) return
 
-  const db = getPrivilegedClient(supabase)
+  const db = supabase
   const updatePayload: Record<string, unknown> = {
     allow_trade: params.allowTrade,
     allow_investment: params.allowInvestment,
@@ -637,5 +827,6 @@ export async function updatePlan(formData: FormData): Promise<void> {
     description,
   })
 }
+
 
 

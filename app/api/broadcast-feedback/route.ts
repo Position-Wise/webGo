@@ -6,6 +6,16 @@ type FeedbackPayload = {
   outcome?: unknown
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === "string" && message.trim()) {
+      return message
+    }
+  }
+  return fallback
+}
+
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient()
   const {
@@ -37,20 +47,57 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid outcome." }, { status: 400 })
   }
 
-  const { error } = await supabase
+  const db = supabase
+
+  const upsertPayload = {
+    broadcast_id: broadcastId,
+    user_id: user.id,
+    outcome,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { error: upsertError } = await db
     .from("broadcast_feedback")
     .upsert(
-      {
-        broadcast_id: broadcastId,
-        user_id: user.id,
-        outcome,
-        updated_at: new Date().toISOString(),
-      },
+      upsertPayload,
       { onConflict: "broadcast_id,user_id" }
     )
 
-  if (error) {
-    return NextResponse.json({ error: "Unable to save feedback." }, { status: 500 })
+  if (upsertError) {
+    // Backward compatibility:
+    // 1) table without `updated_at` column
+    // 2) table without unique constraint on (broadcast_id, user_id)
+    const { error: replaceDeleteError } = await db
+      .from("broadcast_feedback")
+      .delete()
+      .eq("broadcast_id", broadcastId)
+      .eq("user_id", user.id)
+
+    if (replaceDeleteError) {
+      return NextResponse.json(
+        {
+          error: getErrorMessage(replaceDeleteError, "Unable to save feedback."),
+        },
+        { status: 500 }
+      )
+    }
+
+    const { error: replaceInsertError } = await db
+      .from("broadcast_feedback")
+      .insert({
+        broadcast_id: broadcastId,
+        user_id: user.id,
+        outcome,
+      })
+
+    if (replaceInsertError) {
+      return NextResponse.json(
+        {
+          error: getErrorMessage(replaceInsertError, "Unable to save feedback."),
+        },
+        { status: 500 }
+      )
+    }
   }
 
   return NextResponse.json({

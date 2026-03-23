@@ -98,6 +98,25 @@ function toSubscription(value: unknown): CurrentUserSubscription | null {
   }
 }
 
+function hasSubscriptionSubmissionEvidence(subscription: CurrentUserSubscription) {
+  return Boolean(
+    toNullableString(subscription.payment_proof) ||
+      toNullableString(subscription.submitted_at)
+  )
+}
+
+function getAccessStateForSubscription(subscription: CurrentUserSubscription): AccessState {
+  const accessState = getAccessStateFromStatus(subscription.status)
+
+  // Some users can have a placeholder "pending" row before submitting proof.
+  // Route them to the onboarding flow until a real submission exists.
+  if (accessState === "waiting" && !hasSubscriptionSubmissionEvidence(subscription)) {
+    return "new_user"
+  }
+
+  return accessState
+}
+
 function getEmptyAccessState(user: User | null): CurrentUserAccessState {
   return {
     user,
@@ -301,7 +320,7 @@ export async function getCurrentUserAccessState(
       user,
       role,
       status,
-      accessState: getAccessStateFromStatus(status),
+      accessState: getAccessStateForSubscription(subscription),
       planId,
       planName,
       subscription,
