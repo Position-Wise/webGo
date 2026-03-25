@@ -7,6 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import Image from "next/image"
+import paymentQR from "../subscribe/PaymentQR.jpg"
 
 type SubscribePlanOption = {
   id: string
@@ -45,9 +47,9 @@ function normalizePlanKey(value: string | null | undefined) {
 
 function getFallbackPriceLabel(planName: string | null | undefined) {
   const key = normalizePlanKey(planName)
-  if (key === "basic") return "$0"
-  if (key === "pro") return "$49"
-  if (key === "premium") return "$189"
+  if (key === "basic") return "₹0"
+  if (key === "pro") return "₹299"
+  if (key === "premium") return "₹599"
   return "Custom"
 }
 
@@ -287,7 +289,8 @@ export default function SubscriptionOnboardingFlow({
 
               {paymentQrUrl ? (
                 <div className="rounded-md border border-border/70 bg-background p-3">
-                  <img src={paymentQrUrl} alt="Payment QR" className="mx-auto w-full max-w-xs rounded-md" />
+                  {selectedPlan?.price === 299 ? (<Image src={paymentQR} alt="Payment QR" className="mx-auto w-full max-w-xs rounded-md" width={400} height={400} />)
+                  : (<img src={paymentQrUrl} alt="Payment QR" className="mx-auto w-full max-w-xs rounded-md" />)}
                 </div>
               ) : (
                 <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">

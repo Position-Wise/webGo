@@ -74,7 +74,7 @@ export default function HomePage() {
           <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-blue-400/20 blur-3xl rounded-full" />
 
           {/* Card */}
-          <Card className="relative w-lg rounded-3xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500">
+          <Card className="relative w-sm md:w-lg rounded-3xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500">
             <CardHeader className="pb-2">
               <CardTitle className="flex justify-between items-center text-xs font-medium text-muted-foreground">
                 <span className="uppercase tracking-wide">
