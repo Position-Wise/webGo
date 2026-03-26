@@ -3,11 +3,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { AuthProvider, useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/components/providers/auth-provider";
 import { getPostLoginRedirectPathForStatus } from "@/lib/subscription-status";
 
-export default function SignInPage() {
+function SignInPageContent() {
   const router = useRouter();
   const { user, profile, loading } = useAuth();
 
@@ -42,4 +42,12 @@ export default function SignInPage() {
       </div>
     </div>
   );
+}
+
+export default function SignInPage() {
+  return (
+    <AuthProvider>
+      <SignInPageContent />
+    </AuthProvider>
+  )
 }

@@ -1,10 +1,10 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { isAdminRole } from "@/lib/roles"
 import { normalizeSubscriptionStatus, type SubscriptionStatus } from "@/lib/subscription-status"
-import type { User } from "@supabase/supabase-js"
+import type { AuthChangeEvent, User } from "@supabase/supabase-js"
 
 type ProfileInfo = {
   role: string | null
@@ -95,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<ProfileInfo>(null)
   const [loading, setLoading] = useState(true)
+  const activeUserIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -109,34 +110,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isMounted) setLoading(v)
     }
 
-    const getSessionAndProfile = async () => {
-      const { data } = await supabase.auth.getSession()
-      const nextUser = data.session?.user ?? null
+    const syncProfile = async (nextUser: User | null, shouldLoad = false) => {
+      activeUserIdRef.current = nextUser?.id ?? null
       setSafeUser(nextUser)
 
-      if (nextUser) {
-        const profileRow = await fetchProfileRowForUser(nextUser.id)
-        setSafeProfile(toProfileInfo(profileRow))
-      } else {
+      if (!nextUser) {
         setSafeProfile(null)
+        setSafeLoading(false)
+        return
       }
 
+      if (shouldLoad) {
+        setSafeLoading(true)
+      }
+
+      const profileRow = await fetchProfileRowForUser(nextUser.id)
+      if (activeUserIdRef.current !== nextUser.id) return
+
+      setSafeProfile(toProfileInfo(profileRow))
       setSafeLoading(false)
     }
 
-    getSessionAndProfile()
+    const shouldRefreshProfile = (
+      event: AuthChangeEvent,
+      currentUserId: string | null,
+      nextUserId: string | null
+    ) => {
+      if (!nextUserId) return false
+      if (currentUserId !== nextUserId) return true
+      return event === "SIGNED_IN" || event === "USER_UPDATED"
+    }
+
+    const getSessionAndProfile = async () => {
+      const { data } = await supabase.auth.getSession()
+      await syncProfile(data.session?.user ?? null)
+    }
+
+    void getSessionAndProfile()
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         const nextUser = session?.user ?? null
-        setSafeUser(nextUser)
+        const currentUserId = activeUserIdRef.current
+        const nextUserId = nextUser?.id ?? null
 
-        if (nextUser) {
-          const profileRow = await fetchProfileRowForUser(nextUser.id)
-          setSafeProfile(toProfileInfo(profileRow))
-        } else {
-          setSafeProfile(null)
+        if (!shouldRefreshProfile(event, currentUserId, nextUserId)) {
+          activeUserIdRef.current = nextUserId
+          setSafeUser(nextUser)
+          if (!nextUser) {
+            setSafeProfile(null)
+          }
+          setSafeLoading(false)
+          return
         }
+
+        await syncProfile(nextUser, currentUserId !== nextUserId)
       }
     )
 
@@ -146,8 +174,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const value = useMemo(
+    () => ({
+      user,
+      profile,
+      loading,
+    }),
+    [loading, profile, user]
+  )
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

@@ -116,7 +116,7 @@ export default function Navbar() {
                   pathname === item.href && "text-accent",
                   shouldHighlightMemberEntry &&
                     item.href === memberHomePath &&
-                    "animate-pulse bg-accent/12 text-accent shadow-sm shadow-accent/20",
+                    "bg-accent/12 text-accent shadow-sm shadow-accent/15 ring-1 ring-accent/20",
                 )}
               >
                 {item.name}
@@ -188,7 +188,7 @@ export default function Navbar() {
       </header>
 
       {/* ================= MOBILE TOP ================= */}
-      <header className="md:hidden fixed top-0 left-0 w-full z-40 border-b border-border bg-background/90 backdrop-blur-md">
+      <header className="fixed top-0 left-0 z-40 w-full border-b border-border bg-background/95 shadow-sm md:hidden">
         <div className="px-6 py-4 flex justify-center">
           <Link href="/" className="font-semibold">
             Position Wise Advisory
@@ -197,8 +197,8 @@ export default function Navbar() {
       </header>
 
       {/* ================= MOBILE BOTTOM PILL ================= */}
-      <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-        <div className="flex items-center gap-6 px-6 py-3 rounded-full border border-border bg-card/90 backdrop-blur-md shadow-lg">
+      <div className="fixed inset-x-4 bottom-4 z-50 md:hidden">
+        <div className="mx-auto flex max-w-md items-center justify-between gap-1 rounded-2xl border border-border/70 bg-card px-2 py-2 shadow-md">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -208,9 +208,10 @@ export default function Navbar() {
               <Link
                 key={item.name}
                 href={item.href}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center rounded-2xl px-3 py-0.5 text-xs transition-colors",
-                  isHighlighted && "animate-pulse bg-accent/12",
+                  "flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-2 py-1.5 text-[11px] transition-colors",
+                  isHighlighted && "bg-accent/12 ring-1 ring-accent/20",
                 )}
               >
                 <Icon
@@ -238,7 +239,7 @@ export default function Navbar() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex flex-col items-center text-xs outline-none"
+                  className="flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-2 py-1.5 text-[11px] outline-none"
                 >
                   <Avatar className="h-6 w-6">
                     <AvatarImage
@@ -303,7 +304,7 @@ export default function Navbar() {
           ) : (
             <Link
               href="/sign-in"
-              className="flex flex-col items-center text-xs"
+              className="flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-2 py-1.5 text-[11px]"
             >
               <LogIn
                 className={cn(

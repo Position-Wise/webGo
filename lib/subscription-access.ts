@@ -161,49 +161,33 @@ async function fetchProfileRoleFromProfilesTable(
   supabase: SupabaseServerClient,
   userId: string
 ) {
-  const byId = await supabase
+  const { data } = await supabase
     .from("profiles")
     .select("role")
-    .eq("id", userId)
-    .maybeSingle()
+    .or(`id.eq.${userId},user_id.eq.${userId}`)
+    .limit(2)
 
-  const roleFromId = toNullableString(byId.data?.role)
-  if (roleFromId) return roleFromId
+  for (const row of (data as LegacyProfileRow[] | null) ?? []) {
+    const role = toNullableString(row.role)
+    if (role) return role
+  }
 
-  const byUserId = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("user_id", userId)
-    .maybeSingle()
-
-  return toNullableString(byUserId.data?.role)
+  return null
 }
 
 async function fetchLegacyProfileRow(
   supabase: SupabaseServerClient,
   userId: string
 ) {
-  const byId = await supabase
+  const { data } = await supabase
     .from("profile")
     .select(
       "role,status,access_status,subscription_status,plan,tier,subscription_plan,membership_plan"
     )
-    .eq("id", userId)
-    .maybeSingle()
+    .or(`id.eq.${userId},user_id.eq.${userId}`)
+    .limit(2)
 
-  if (byId.data) {
-    return byId.data as LegacyProfileRow
-  }
-
-  const byUserId = await supabase
-    .from("profile")
-    .select(
-      "role,status,access_status,subscription_status,plan,tier,subscription_plan,membership_plan"
-    )
-    .eq("user_id", userId)
-    .maybeSingle()
-
-  return (byUserId.data as LegacyProfileRow | null) ?? null
+  return ((data as LegacyProfileRow[] | null) ?? [])[0] ?? null
 }
 
 async function fetchCurrentSubscription(
@@ -289,11 +273,14 @@ export async function getCurrentUserAccessState(
     return getEmptyAccessState(null)
   }
 
-  const [roleFromProfiles, subscription, legacyProfile] = await Promise.all([
+  const [roleFromProfiles, subscription] = await Promise.all([
     fetchProfileRoleFromProfilesTable(supabase, user.id),
     fetchCurrentSubscription(supabase, user.id),
-    fetchLegacyProfileRow(supabase, user.id),
   ])
+  const legacyProfile =
+    !roleFromProfiles || !subscription
+      ? await fetchLegacyProfileRow(supabase, user.id)
+      : null
 
   const role = roleFromProfiles ?? toNullableString(legacyProfile?.role)
 

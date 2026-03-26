@@ -4,10 +4,8 @@ import { getBroadcastAuthorName } from "@/app/admin/helpers"
 import DashboardTabView, {
   type DashboardBroadcast,
 } from "@/components/dashboard/dashboard-tab-view"
-import LiveMarketBoard from "@/components/dashboard/live-market-board"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import { getAccessStateLabel } from "@/lib/subscription-status"
-import type { MarketSymbolOption } from "@/lib/market-symbols"
 
 export const dynamic = "force-dynamic"
 
@@ -38,12 +36,6 @@ type BroadcastRow = {
   created_at: string | null
 }
 
-type MarketSymbolRow = {
-  symbol?: string | null
-  display_name?: string | null
-  is_active?: boolean | null
-}
-
 type BroadcastFeedbackRow = {
   broadcast_id?: string | null
   outcome?: string | null
@@ -52,6 +44,8 @@ type BroadcastFeedbackRow = {
 type TradeUsageRow = {
   broadcast_id?: string | null
 }
+
+const PLAN_FEATURES_SELECT = "id,name,allow_trade,allow_investment,trade_limit_per_week"
 
 function normalizePlanName(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase()
@@ -84,14 +78,6 @@ function normalizeBroadcastType(
   const normalized = (value ?? "investment").toLowerCase()
   if (normalized === "trade" || normalized === "announcement") return normalized
   return "investment"
-}
-
-function normalizeMarketSymbol(value: string | null | undefined) {
-  const normalized = (value ?? "").trim().toUpperCase()
-  if (!normalized) return null
-  if (normalized.length > 20) return null
-  if (!/^[A-Za-z0-9^.\-=&]+$/.test(normalized)) return null
-  return normalized
 }
 
 function getStartOfWeekIso() {
@@ -128,7 +114,7 @@ export default async function DashboardPage() {
   if (userPlanId) {
     const { data } = await supabase
       .from("subscription_plans")
-      .select("*")
+      .select(PLAN_FEATURES_SELECT)
       .eq("id", userPlanId)
       .maybeSingle()
     planRow = (data as PlanFeatureRow | null) ?? null
@@ -137,7 +123,7 @@ export default async function DashboardPage() {
   if (!planRow) {
     const { data } = await supabase
       .from("subscription_plans")
-      .select("*")
+      .select(PLAN_FEATURES_SELECT)
       .ilike("name", fallbackPlanName)
       .maybeSingle()
     planRow = (data as PlanFeatureRow | null) ?? null
@@ -283,32 +269,6 @@ export default async function DashboardPage() {
     tradeConsumedThisWeek = consumedSet.size
   }
 
-  const { data: marketRows } = await supabase
-    .from("market_symbols")
-    .select("symbol,display_name,is_active,sort_order")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true })
-    .order("display_name", { ascending: true })
-    .limit(120)
-
-  const availableMarketSymbols: MarketSymbolOption[] = Array.from(
-    new Map(
-      (((marketRows as MarketSymbolRow[] | null) ?? [])
-        .map((row) => {
-          const symbol = normalizeMarketSymbol(row.symbol)
-          if (!symbol) return null
-
-          return {
-            symbol,
-            label: (row.display_name ?? "").trim() || symbol,
-          }
-        })
-        .filter(
-          (row): row is MarketSymbolOption => row !== null
-        )).map((row) => [row.symbol, row])
-    ).values()
-  )
-
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
       <section className="max-w-5xl mx-auto space-y-8">
@@ -354,8 +314,6 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* <LiveMarketBoard availableSymbols={availableMarketSymbols} /> */}
-
         <div>
           <DashboardTabView
             broadcasts={broadcastsWithFeedback}
@@ -370,4 +328,3 @@ export default async function DashboardPage() {
     </main>
   )
 }
-

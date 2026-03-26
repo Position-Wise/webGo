@@ -70,11 +70,11 @@ export default function HomePage() {
 
         <div className="relative flex justify-center">
           {/* Glow Background */}
-          <div className="absolute -top-10 -right-10 w-64 h-64 bg-emerald-400/20 blur-3xl rounded-full" />
-          <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-blue-400/20 blur-3xl rounded-full" />
+          <div className="absolute -top-10 -right-10 hidden h-64 w-64 rounded-full bg-emerald-400/20 blur-3xl sm:block" />
+          <div className="absolute -bottom-10 -left-10 hidden h-64 w-64 rounded-full bg-blue-400/20 blur-3xl sm:block" />
 
           {/* Card */}
-          <Card className="relative w-sm md:w-lg rounded-3xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500">
+          <Card className="relative w-sm rounded-3xl border border-border/50 bg-card/95 shadow-xl transition-transform duration-500 md:w-lg sm:rotate-3 sm:bg-card/80 sm:shadow-2xl sm:backdrop-blur-xl sm:hover:rotate-0">
             <CardHeader className="pb-2">
               <CardTitle className="flex justify-between items-center text-xs font-medium text-muted-foreground">
                 <span className="uppercase tracking-wide">
@@ -135,7 +135,7 @@ export default function HomePage() {
       </section>
 
       {/* =============== PRECISION TOOLS =============== */}
-      <section className="border-y border-border/70 bg-muted/30">
+      <section className="border-y border-border/70 bg-muted/30 [contain-intrinsic-size:1px_1200px] [content-visibility:auto]">
         <div className="max-w-6xl mx-auto px-6 py-20">
           <div className="max-w-xl">
             <p className="text-sm font-bold uppercase tracking-[0.25em] text-accent">
@@ -189,7 +189,7 @@ export default function HomePage() {
 
                 <p className="text-sm mt-2 opacity-80 leading-relaxed">
                   Deep-dive technical and fundamental analysis across sectors.
-                  Understand the "why" behind market moves.
+                  Understand the &ldquo;why&rdquo; behind market moves.
                 </p>
 
                 <div className="mt-5 space-y-2 text-sm">
@@ -253,7 +253,7 @@ export default function HomePage() {
       </section>
 
       {/* =============== TRANSPARENT TIERS =============== */}
-      <section className="max-w-6xl mx-auto px-6 py-24">
+      <section className="max-w-6xl mx-auto px-6 py-24 [contain-intrinsic-size:1px_1200px] [content-visibility:auto]">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground/80">
@@ -380,7 +380,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="px-6 py-20 bg-[#2a4064]">
+      <section className="bg-[#2a4064] px-6 py-20 [contain-intrinsic-size:1px_900px] [content-visibility:auto]">
         <div className="max-w-xl mx-auto space-y-8">
           {/* Image */}
           {/* <div className="rounded-3xl overflow-hidden shadow-lg">
@@ -403,7 +403,7 @@ export default function HomePage() {
 
             <p className="mt-4 text-sm text-accent-foreground/80 leading-relaxed">
               Position Wise Advisory was founded on a singular premise: the
-              retail trader lacks an architectural approach to markets. We don't
+              retail trader lacks an architectural approach to markets. We don&apos;t
               just provide tips; we provide a framework.
             </p>
           </div>
@@ -439,14 +439,14 @@ export default function HomePage() {
       </section>
 
       {/* =============== CTA BAND =============== */}
-      <section className="px-6 py-24">
+      <section className="px-6 py-24 [contain-intrinsic-size:1px_900px] [content-visibility:auto]">
         <div className="max-w-xl mx-auto relative">
           {/* Glow Background */}
-          <div className="absolute -top-10 -right-10 w-64 h-64 bg-emerald-400/50 blur-3xl rounded-full" />
-          <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-blue-400/50 blur-3xl rounded-full" />
+          <div className="absolute -top-10 -right-10 hidden h-64 w-64 rounded-full bg-emerald-400/50 blur-3xl sm:block" />
+          <div className="absolute -bottom-10 -left-10 hidden h-64 w-64 rounded-full bg-blue-400/50 blur-3xl sm:block" />
 
           {/* Card */}
-          <div className="relative border-none rounded-3xl bg-gradient-to-b from-[#2a4064] from-70% to-emerald-500 text-primary-foreground p-8 text-center shadow-2xl border border-white/10 backdrop-blur-xl">
+          <div className="relative rounded-3xl border border-white/10 bg-gradient-to-b from-[#2a4064] from-70% to-emerald-500 p-8 text-center text-primary-foreground shadow-xl sm:shadow-2xl sm:backdrop-blur-xl">
             <h3 className="text-2xl font-semibold leading-tight">
               Ready to secure your position?
             </h3>
@@ -463,7 +463,7 @@ export default function HomePage() {
 
               <Button
                 variant="outline"
-                className="w-full border-white/20 text-primary-foreground bg-white/10 hover:bg-white/20 rounded-xl py-6 backdrop-blur"
+                className="w-full rounded-xl border-white/20 bg-white/10 py-6 text-primary-foreground hover:bg-white/20 sm:backdrop-blur"
               >
                 Talk to an Advisor
               </Button>
