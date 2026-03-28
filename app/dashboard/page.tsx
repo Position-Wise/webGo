@@ -1,11 +1,16 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server"
-import { isAdminRole } from "@/lib/roles"
 import { getBroadcastAuthorName } from "@/app/admin/helpers"
 import DashboardTabView, {
   type DashboardBroadcast,
 } from "@/components/dashboard/dashboard-tab-view"
+import LiveMarketBoard from "@/components/dashboard/live-market-board"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import { getAccessStateLabel } from "@/lib/subscription-status"
+import {
+  normalizeBroadcastType,
+  normalizePlanAudienceKey,
+  resolveMemberBroadcastTab,
+} from "@/lib/broadcast-audience"
 
 export const dynamic = "force-dynamic"
 
@@ -38,6 +43,7 @@ type BroadcastRow = {
 
 type BroadcastFeedbackRow = {
   broadcast_id?: string | null
+  user_id?: string | null
   outcome?: string | null
 }
 
@@ -45,24 +51,12 @@ type TradeUsageRow = {
   broadcast_id?: string | null
 }
 
+type MarketSymbolRow = {
+  symbol?: string | null
+  display_name?: string | null
+}
+
 const PLAN_FEATURES_SELECT = "id,name,allow_trade,allow_investment,trade_limit_per_week"
-
-function normalizePlanName(value: string | null | undefined) {
-  const normalized = (value ?? "").trim().toLowerCase()
-  if (normalized === "pro" || normalized === "growth") return "pro"
-  if (normalized === "premium" || normalized === "elite") return "premium"
-  if (normalized === "master_admin") return "admin"
-  return normalized || "basic"
-}
-
-function getPlanAudienceKeys(planName: string) {
-  if (planName === "admin") {
-    return ["basic", "pro", "premium", "growth", "elite", "admin"]
-  }
-  if (planName === "pro") return ["pro", "growth"]
-  if (planName === "premium") return ["premium", "elite"]
-  return [planName]
-}
 
 function defaultAllowTrade(planName: string) {
   return planName === "pro" || planName === "premium" || planName === "admin"
@@ -70,14 +64,6 @@ function defaultAllowTrade(planName: string) {
 
 function defaultAllowInvestment(planName: string) {
   return planName !== "new"
-}
-
-function normalizeBroadcastType(
-  value: string | null | undefined
-): "trade" | "investment" | "announcement" {
-  const normalized = (value ?? "investment").toLowerCase()
-  if (normalized === "trade" || normalized === "announcement") return normalized
-  return "investment"
 }
 
 function getStartOfWeekIso() {
@@ -102,11 +88,11 @@ export default async function DashboardPage() {
   const user = access.user
 
   if (!user) {
-    return null // layout should already redirect
+    return null
   }
 
-  const fallbackPlanName = normalizePlanName(
-    access.planName ?? (isAdminRole(access.role) ? "admin" : "basic")
+  const fallbackPlanName = normalizePlanAudienceKey(
+    access.planName ?? (access.isAdmin ? "admin" : "basic")
   )
   const userPlanId = access.planId
   let planRow: PlanFeatureRow | null = null
@@ -129,7 +115,7 @@ export default async function DashboardPage() {
     planRow = (data as PlanFeatureRow | null) ?? null
   }
 
-  const normalizedPlan = normalizePlanName(planRow?.name ?? fallbackPlanName)
+  const normalizedPlan = normalizePlanAudienceKey(planRow?.name ?? fallbackPlanName)
   const isApprovedAccess = access.accessState === "approved"
   const baseAllowTrade =
     typeof planRow?.allow_trade === "boolean"
@@ -146,7 +132,6 @@ export default async function DashboardPage() {
   const allowTrade = isApprovedAccess ? baseAllowTrade : false
   const allowInvestment = isApprovedAccess ? baseAllowInvestment : false
   const tradeLimitPerWeek = allowTrade ? planTradeLimit : 0
-  const audienceKeys = getPlanAudienceKeys(normalizedPlan)
 
   const nowIso = new Date().toISOString()
   const broadcastSelect = `
@@ -162,18 +147,10 @@ export default async function DashboardPage() {
         full_name
       )
     `
-  const audienceFilter = [
-    "audience.is.null",
-    "audience.eq.all",
-    "audience.eq.invest",
-    "audience.eq.trade",
-    ...audienceKeys.map((audience) => `audience.eq.${audience}`),
-  ].join(",")
-
   const { data: broadcastRowsWithMeta, error: broadcastRowsWithMetaError } = await supabase
     .from("admin_broadcasts")
     .select(broadcastSelect)
-    .or(audienceFilter)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("created_at", { ascending: false })
     .limit(60)
 
@@ -181,64 +158,71 @@ export default async function DashboardPage() {
     ? (
       await supabase
         .from("admin_broadcasts")
-        .select(`
-          id,
-          title,
-          message,
-          audience,
-          broadcast_type,
-          expires_at,
-          created_at
-        `)
+        .select(
+          `
+            id,
+            title,
+            message,
+            audience,
+            broadcast_type,
+            expires_at,
+            created_at
+          `
+        )
         .order("created_at", { ascending: false })
         .limit(60)
     ).data
     : broadcastRowsWithMeta
 
-  const broadcasts: DashboardBroadcast[] = ((broadcastRows as BroadcastRow[] | null) ?? [])
-    .filter((row) => {
-      if (!row.message) return false
-      const audience = (row.audience ?? "all").toLowerCase()
-      if (
-        audience !== "all" &&
-        audience !== "invest" &&
-        audience !== "trade" &&
-        !audienceKeys.includes(audience)
-      ) {
-        return false
-      }
+  const broadcasts = ((broadcastRows as BroadcastRow[] | null) ?? []).reduce<
+    DashboardBroadcast[]
+  >((acc, row) => {
+      if (!row.message) return acc
+      if (row.expires_at && row.expires_at <= nowIso) return acc
 
-      if (!row.expires_at) return true
-      if (row.expires_at <= nowIso) return false
+      const dashboardTab = resolveMemberBroadcastTab({
+        audience: row.audience,
+        broadcastType: row.broadcast_type,
+        isAdmin: access.isAdmin,
+        planName: normalizedPlan,
+        allowTrade,
+        allowInvestment,
+      })
 
-      return true
-    })
-    .map((row) => ({
-      id: row.id,
-      title: row.title,
-      message: row.message,
-      audience: row.audience,
-      broadcast_type: normalizeBroadcastType(row.broadcast_type),
-      posted_by_name: getBroadcastAuthorName(row.profiles),
-      created_at: row.created_at,
-      user_feedback: null,
-    }))
+      if (!dashboardTab) return acc
+
+      acc.push({
+        id: row.id,
+        title: row.title,
+        message: row.message,
+        audience: row.audience,
+        broadcast_type: normalizeBroadcastType(row.broadcast_type),
+        dashboard_tab: dashboardTab,
+        posted_by_name: getBroadcastAuthorName(row.profiles),
+        created_at: row.created_at,
+        user_feedback: null,
+      })
+
+      return acc
+    }, [])
 
   const broadcastIds = broadcasts.map((broadcast) => broadcast.id)
   const feedbackByBroadcast: Record<string, "profit" | "loss"> = {}
 
-  if (broadcastIds.length) {
+  if (broadcastIds.length && !access.isAdmin) {
     const { data: feedbackRows } = await supabase
       .from("broadcast_feedback")
-      .select("broadcast_id,outcome")
+      .select("*")
       .eq("user_id", user.id)
       .in("broadcast_id", broadcastIds)
 
     for (const row of (feedbackRows as BroadcastFeedbackRow[] | null) ?? []) {
       const broadcastId = (row.broadcast_id ?? "").trim()
       const outcome = (row.outcome ?? "").trim().toLowerCase()
+
       if (!broadcastId) continue
       if (outcome !== "profit" && outcome !== "loss") continue
+
       feedbackByBroadcast[broadcastId] = outcome
     }
   }
@@ -268,6 +252,20 @@ export default async function DashboardPage() {
     consumedTradeBroadcastIds.push(...consumedSet)
     tradeConsumedThisWeek = consumedSet.size
   }
+
+  const { data: marketSymbolRows } = await supabase
+    .from("market_symbols")
+    .select("symbol,display_name")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("display_name", { ascending: true })
+
+  const availableSymbols = ((marketSymbolRows as MarketSymbolRow[] | null) ?? [])
+    .map((row) => ({
+      symbol: (row.symbol ?? "").trim().toUpperCase(),
+      label: (row.display_name ?? row.symbol ?? "").trim(),
+    }))
+    .filter((row) => row.symbol.length > 0)
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
@@ -314,6 +312,8 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        <LiveMarketBoard availableSymbols={availableSymbols} />
+
         <div>
           <DashboardTabView
             broadcasts={broadcastsWithFeedback}
@@ -322,6 +322,7 @@ export default async function DashboardPage() {
             tradeLimitPerWeek={tradeLimitPerWeek}
             tradeConsumedThisWeek={tradeConsumedThisWeek}
             consumedTradeBroadcastIds={consumedTradeBroadcastIds}
+            allowFeedback={!access.isAdmin}
           />
         </div>
       </section>

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { AuthProvider, useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
-import { getPostLoginRedirectPathForStatus } from "@/lib/subscription-status";
+import { getPostLoginRedirectPathForState } from "@/lib/subscription-status";
 
 function SignInPageContent() {
   const router = useRouter();
@@ -13,8 +13,8 @@ function SignInPageContent() {
 
   useEffect(() => {
     if (loading || !user) return;
-    router.replace(getPostLoginRedirectPathForStatus(profile?.status ?? null));
-  }, [loading, profile?.status, router, user]);
+    router.replace(getPostLoginRedirectPathForState(profile?.accessState ?? "new_user"));
+  }, [loading, profile?.accessState, router, user]);
 
   const handleGoogleLogin = async () => {
     await supabase.auth.signInWithOAuth({

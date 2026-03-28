@@ -2,27 +2,25 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
-import { isAdminRole } from "@/lib/roles"
-import { normalizeSubscriptionStatus, type SubscriptionStatus } from "@/lib/subscription-status"
+import {
+  deriveCurrentUserAccessState,
+  fetchCurrentUserSubscription,
+  resolveCurrentUserAdminState,
+  type AccessQueryClient,
+} from "@/lib/current-user-access"
+import {
+  type AccessState,
+  type SubscriptionStatus,
+} from "@/lib/subscription-status"
 import type { AuthChangeEvent, User } from "@supabase/supabase-js"
 
 type ProfileInfo = {
   role: string | null
   plan: string | null
   status: SubscriptionStatus
+  accessState: AccessState
+  isAdmin: boolean
 } | null
-
-type ProfileQueryRow = {
-  role?: string | null
-  user_subscriptions?: {
-    status?: string | null
-    payment_proof?: string | null
-    submitted_at?: string | null
-    subscription_plans?: {
-      name?: string | null
-    }[]
-  }[]
-}
 
 type AuthContextType = {
   user: User | null
@@ -36,59 +34,31 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
 })
 
-function toProfileInfo(profileRow: ProfileQueryRow | null): ProfileInfo {
-  if (!profileRow) return null
-
-  const role = profileRow.role ?? null
-  const subscription = profileRow.user_subscriptions?.[0]
-  const plan = isAdminRole(role) ? "admin" : subscription?.subscription_plans?.[0]?.name ?? null
-  const normalizedStatus = normalizeSubscriptionStatus(subscription?.status ?? null)
-  const hasSubmissionEvidence = Boolean(
-    (subscription?.payment_proof ?? "").trim() || (subscription?.submitted_at ?? "").trim()
-  )
-  const status = isAdminRole(role)
-    ? "active"
-    : normalizedStatus === "pending" && !hasSubmissionEvidence
-      ? null
-      : normalizedStatus
-
+function toProfileInfo(access: ReturnType<typeof deriveCurrentUserAccessState>): ProfileInfo {
   return {
-    role,
-    plan,
-    status,
+    role: access.role,
+    plan: access.planName ?? (access.isAdmin ? "admin" : null),
+    status: access.status,
+    accessState: access.accessState,
+    isAdmin: access.isAdmin,
   }
 }
 
-async function fetchProfileRowForUser(userId: string) {
-  const profileSelect = `
+async function fetchProfileInfoForUser(user: User) {
+  const [{ isAdmin, role, source }, subscription] = await Promise.all([
+    resolveCurrentUserAdminState(supabase as unknown as AccessQueryClient, user.id),
+    fetchCurrentUserSubscription(supabase as unknown as AccessQueryClient, user.id),
+  ])
+
+  return toProfileInfo(
+    deriveCurrentUserAccessState({
+      user,
       role,
-      user_subscriptions (
-        status,
-        payment_proof,
-        submitted_at,
-        subscription_plans (
-          name
-        )
-      )
-    `
-
-  const { data: profileById } = await supabase
-    .from("profiles")
-    .select(profileSelect)
-    .eq("id", userId)
-    .maybeSingle()
-
-  if (profileById) {
-    return profileById as ProfileQueryRow
-  }
-
-  const { data: profileByUserId } = await supabase
-    .from("profiles")
-    .select(profileSelect)
-    .eq("user_id", userId)
-    .maybeSingle()
-
-  return (profileByUserId as ProfileQueryRow | null) ?? null
+      isAdmin,
+      adminResolutionSource: source,
+      subscription,
+    })
+  )
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -124,11 +94,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSafeLoading(true)
       }
 
-      const profileRow = await fetchProfileRowForUser(nextUser.id)
-      if (activeUserIdRef.current !== nextUser.id) return
+      try {
+        const nextProfile = await fetchProfileInfoForUser(nextUser)
+        if (activeUserIdRef.current !== nextUser.id) return
 
-      setSafeProfile(toProfileInfo(profileRow))
-      setSafeLoading(false)
+        setSafeProfile(nextProfile)
+      } catch (error) {
+        console.error("Auth profile sync error:", error)
+        if (activeUserIdRef.current !== nextUser.id) return
+        setSafeProfile(null)
+      } finally {
+        setSafeLoading(false)
+      }
     }
 
     const shouldRefreshProfile = (

@@ -1,8 +1,7 @@
 import { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
-import { isAdminRole } from "@/lib/roles"
-import { resolveRoleForUser, type MinimalDbClient } from "./access"
+import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import AdminNav from "./_components/admin-nav"
 
 export const dynamic = "force-dynamic"
@@ -13,21 +12,13 @@ interface AdminLayoutProps {
 
 export default async function AdminLayout({ children }: AdminLayoutProps) {
   const supabase = await createSupabaseServerClient()
+  const access = await getCurrentUserAccessState(supabase)
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!access.user) {
     redirect("/sign-in")
   }
 
-  const role = await resolveRoleForUser(
-    user.id,
-    supabase as unknown as MinimalDbClient
-  )
-
-  if (!isAdminRole(role)) {
+  if (!access.isAdmin) {
     redirect("/")
   }
 

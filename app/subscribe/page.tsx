@@ -50,7 +50,7 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
   const resolvedSearchParams = searchParams ? await searchParams : {}
   const modeRaw = resolvedSearchParams.mode
   const mode = Array.isArray(modeRaw) ? modeRaw[0] : modeRaw
-  const flowMode = mode === "edit" ? "edit" : "new"
+
 
   const access = await getCurrentUserAccessState()
 
@@ -61,6 +61,8 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
   if (access.accessState === "approved") {
     redirect("/dashboard")
   }
+
+  const flowMode = access.accessState === "blocked" || mode === "edit" ? "edit" : "new"
 
   const db = await createSupabaseServerClient()
   const withPriceQuery = await db
@@ -124,7 +126,7 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
         plans={plans}
         initialPlanId={currentPlanId}
         accessState={access.accessState}
-        isRejected={access.accessState === "rejected"}
+        isBlocked={access.accessState === "blocked"}
         currentPlanLabel={currentPlanLabel}
         currentProofUrl={access.subscription?.payment_proof ?? null}
         lastSubmittedAt={formatDate(access.subscription?.submitted_at ?? null)}

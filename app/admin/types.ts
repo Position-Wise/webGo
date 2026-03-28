@@ -1,20 +1,17 @@
 export type ProfileRow = {
   id: string
   full_name: string | null
+  avatar_url?: string | null
   email?: string | null
   role?: string | null
-  source_table?: "profiles" | "profile"
   user_subscriptions?: {
     id?: string
     status?: string | null
-    plan_id?: string | null
     subscription_plan_id?: string | null
     payment_proof?: string | null
     submitted_at?: string | null
     started_at?: string | null
     ends_at?: string | null
-    current_period_start?: string | null
-    current_period_end?: string | null
     created_at?: string | null
     updated_at?: string | null
     [key: string]: unknown

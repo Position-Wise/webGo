@@ -53,51 +53,19 @@ export async function POST(request: Request) {
     broadcast_id: broadcastId,
     user_id: user.id,
     outcome,
-    updated_at: new Date().toISOString(),
   }
 
   const { error: upsertError } = await db
     .from("broadcast_feedback")
-    .upsert(
-      upsertPayload,
-      { onConflict: "broadcast_id,user_id" }
-    )
+    .upsert(upsertPayload, { onConflict: "broadcast_id,user_id" })
 
   if (upsertError) {
-    // Backward compatibility:
-    // 1) table without `updated_at` column
-    // 2) table without unique constraint on (broadcast_id, user_id)
-    const { error: replaceDeleteError } = await db
-      .from("broadcast_feedback")
-      .delete()
-      .eq("broadcast_id", broadcastId)
-      .eq("user_id", user.id)
-
-    if (replaceDeleteError) {
-      return NextResponse.json(
-        {
-          error: getErrorMessage(replaceDeleteError, "Unable to save feedback."),
-        },
-        { status: 500 }
-      )
-    }
-
-    const { error: replaceInsertError } = await db
-      .from("broadcast_feedback")
-      .insert({
-        broadcast_id: broadcastId,
-        user_id: user.id,
-        outcome,
-      })
-
-    if (replaceInsertError) {
-      return NextResponse.json(
-        {
-          error: getErrorMessage(replaceInsertError, "Unable to save feedback."),
-        },
-        { status: 500 }
-      )
-    }
+    return NextResponse.json(
+      {
+        error: getErrorMessage(upsertError, "Unable to save feedback."),
+      },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({

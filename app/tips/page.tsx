@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic"
 
 function normalizePlanName(plan: string | null) {
   const normalized = (plan ?? "").toLowerCase()
+  if (normalized === "admin") return "admin"
   if (normalized === "premium" || normalized === "elite") return "premium"
   if (normalized === "pro" || normalized === "growth") return "pro"
   return "basic"
@@ -20,9 +21,9 @@ export default async function TipsPage() {
     return null
   }
 
-  const tier = normalizePlanName(access.planName)
-  const canSeePro = tier === "pro" || tier === "premium"
-  const canSeePremium = tier === "premium"
+  const tier = normalizePlanName(access.planName ?? (access.isAdmin ? "admin" : null))
+  const canSeePro = tier === "pro" || tier === "premium" || tier === "admin"
+  const canSeePremium = tier === "premium" || tier === "admin"
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">

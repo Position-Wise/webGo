@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server"
-import { MANDATORY_MARKET_SYMBOLS } from "@/lib/market-symbols"
 
 export const revalidate = 0
 
-const MANDATORY_SYMBOLS = MANDATORY_MARKET_SYMBOLS
-const MAX_CUSTOM_SYMBOLS = 6
-const MAX_TOTAL_SYMBOLS = MANDATORY_SYMBOLS.length + MAX_CUSTOM_SYMBOLS
+const MAX_TOTAL_SYMBOLS = 24
 const SYMBOL_PATTERN = /^[A-Za-z0-9^.\-=&]+$/
 
 type YahooQuoteRow = {
@@ -34,12 +31,7 @@ function extractSymbols(raw: string | null) {
     .map(normalizeSymbol)
     .filter((value): value is string => Boolean(value))
 
-  const deduped = Array.from(new Set(requested)).filter(
-    (symbol) => !MANDATORY_SYMBOLS.includes(symbol as (typeof MANDATORY_SYMBOLS)[number])
-  )
-
-  const customSymbols = deduped.slice(0, MAX_CUSTOM_SYMBOLS)
-  return [...MANDATORY_SYMBOLS, ...customSymbols].slice(0, MAX_TOTAL_SYMBOLS)
+  return Array.from(new Set(requested)).slice(0, MAX_TOTAL_SYMBOLS)
 }
 
 async function fetchWithTimeout(url: string, timeoutMs = 4500) {
@@ -63,6 +55,14 @@ async function fetchWithTimeout(url: string, timeoutMs = 4500) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const symbols = extractSymbols(searchParams.get("symbols"))
+
+  if (!symbols.length) {
+    return NextResponse.json({
+      symbols: [],
+      quotes: [],
+    })
+  }
+
   const encodedSymbols = encodeURIComponent(symbols.join(","))
   const quoteUrls = [
     `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodedSymbols}`,

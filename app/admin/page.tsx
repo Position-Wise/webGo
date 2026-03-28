@@ -13,8 +13,8 @@ import {
 } from "./helpers"
 import { fetchAdminBroadcasts, fetchAdminProfiles } from "./queries"
 import {
-  getAccessStateFromStatus,
-  getAccessStateLabel,
+  getSubscriptionStatusLabel,
+  normalizeSubscriptionStatus,
 } from "@/lib/subscription-status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,19 +29,16 @@ export default async function AdminPage() {
     fetchAdminBroadcasts(12),
   ])
 
+  const getProfileStatus = (profile: (typeof profiles)[number]) =>
+    normalizeSubscriptionStatus(profile.user_subscriptions?.[0]?.status ?? null)
+
   const totalMembers = profiles.length
-  const activeCount = profiles.filter((profile) => {
-    const status = profile.user_subscriptions?.[0]?.status ?? null
-    return getAccessStateFromStatus(status) === "approved"
-  }).length
-  const waitingCount = profiles.filter((profile) => {
-    const status = profile.user_subscriptions?.[0]?.status ?? null
-    return getAccessStateFromStatus(status) === "waiting"
-  }).length
-  const newUserCount = profiles.filter((profile) => {
-    const status = profile.user_subscriptions?.[0]?.status ?? null
-    return getAccessStateFromStatus(status) === "new_user"
-  }).length
+  const pendingCount = profiles.filter((profile) => getProfileStatus(profile) === "pending").length
+  const activeCount = profiles.filter((profile) => getProfileStatus(profile) === "active").length
+  const cancelledCount = profiles.filter(
+    (profile) => getProfileStatus(profile) === "cancelled"
+  ).length
+  const expiredCount = profiles.filter((profile) => getProfileStatus(profile) === "expired").length
 
   const memberPreview = profiles.slice(0, 5)
 
@@ -55,11 +52,12 @@ export default async function AdminPage() {
 
   return (
     <section className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Total members" value={totalMembers} />
-        <MetricCard label="New users" value={newUserCount} />
-        <MetricCard label="Pending review" value={waitingCount} />
-        <MetricCard label="Active access" value={activeCount} />
+        <MetricCard label="Pending" value={pendingCount} />
+        <MetricCard label="Active" value={activeCount} />
+        <MetricCard label="Cancelled" value={cancelledCount} />
+        <MetricCard label="Expired" value={expiredCount} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
@@ -247,8 +245,8 @@ export default async function AdminPage() {
               ) : (
                 <div className="space-y-2">
                   {memberPreview.map((profile) => {
-                    const status = getAccessStateLabel(
-                      getAccessStateFromStatus(profile.user_subscriptions?.[0]?.status ?? null)
+                    const status = getSubscriptionStatusLabel(
+                      normalizeSubscriptionStatus(profile.user_subscriptions?.[0]?.status ?? null)
                     )
                     const plan = (
                       profile.user_subscriptions?.[0]?.subscription_plans?.[0]?.name ??

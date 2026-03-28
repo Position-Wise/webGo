@@ -16,7 +16,6 @@ import {
   Clock3,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
-import { isAdminRole } from "@/lib/roles";
 import { supabase } from "@/lib/supabase/client";
 import {
   getAccessStateFromStatus,
@@ -38,14 +37,16 @@ export default function Navbar() {
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { user, profile } = useAuth();
-  const accessState = getAccessStateFromStatus(profile?.status ?? null);
+  const accessState = profile?.accessState ?? getAccessStateFromStatus(profile?.status ?? null);
   const memberHomePath = getMemberHomePathForState(accessState);
   const memberHomeLabel =
     accessState === "approved"
       ? "Dashboard"
       : accessState === "waiting"
         ? "Waiting"
-        : "Subscribe";
+        : accessState === "blocked"
+          ? "Resubmit"
+          : "Subscribe";
   const memberHomeIcon =
     accessState === "approved"
       ? LayoutDashboard
@@ -53,7 +54,7 @@ export default function Navbar() {
         ? Clock3
         : Layers;
   const hasActiveAccess = accessState === "approved";
-  const isAdmin = !!user && isAdminRole(profile?.role ?? null);
+  const isAdmin = Boolean(user && profile?.isAdmin);
   const shouldHighlightMemberEntry =
     Boolean(user) && accessState === "new_user" && !isAdmin;
   const isAccountPage =

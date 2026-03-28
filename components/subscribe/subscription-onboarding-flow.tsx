@@ -28,7 +28,7 @@ type SubscriptionOnboardingFlowProps = {
   plans: SubscribePlanOption[]
   initialPlanId: string
   accessState: string
-  isRejected: boolean
+  isBlocked: boolean
   currentPlanLabel: string | null
   currentProofUrl: string | null
   lastSubmittedAt: string | null
@@ -47,9 +47,9 @@ function normalizePlanKey(value: string | null | undefined) {
 
 function getFallbackPriceLabel(planName: string | null | undefined) {
   const key = normalizePlanKey(planName)
-  if (key === "basic") return "₹0"
-  if (key === "pro") return "₹299"
-  if (key === "premium") return "₹599"
+  if (key === "basic") return "Rs 0"
+  if (key === "pro") return "Rs 299"
+  if (key === "premium") return "Rs 599"
   return "Custom"
 }
 
@@ -72,14 +72,14 @@ export default function SubscriptionOnboardingFlow({
   plans,
   initialPlanId,
   accessState,
-  isRejected,
+  isBlocked,
   currentPlanLabel,
   currentProofUrl,
   lastSubmittedAt,
   paymentQrUrl,
 }: SubscriptionOnboardingFlowProps) {
   const waitingState = accessState === "waiting"
-  const isEditMode = mode === "edit"
+  const isEditMode = mode === "edit" || isBlocked
   const steps = isEditMode ? EDIT_FLOW_STEPS : NEW_FLOW_STEPS
 
   const [selectedPlanId, setSelectedPlanId] = useState(initialPlanId || plans[0]?.id || "")
@@ -115,12 +115,18 @@ export default function SubscriptionOnboardingFlow({
       <div className="space-y-2">
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Membership Onboarding</p>
         <h1 className="text-3xl sm:text-4xl font-semibold">
-          {isEditMode ? "Update your submission" : "Welcome to your financial journey"}
+          {isBlocked
+            ? "Restore your membership access"
+            : isEditMode
+              ? "Update your submission"
+              : "Welcome to your financial journey"}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {isEditMode
-            ? "Follow this update flow to edit plan or proof details safely."
-            : "Complete each step once and unlock broadcast access after admin approval."}
+          {isBlocked
+            ? "Your previous access is no longer active. Re-submit your plan and payment details to return to admin review."
+            : isEditMode
+              ? "Follow this update flow to edit plan or proof details safely."
+              : "Complete each step once and unlock broadcast access after admin approval."}
         </p>
       </div>
 
@@ -173,9 +179,9 @@ export default function SubscriptionOnboardingFlow({
         </CardHeader>
 
         <CardContent className="space-y-5">
-          {isRejected ? (
+          {isBlocked ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              Your previous submission was rejected. Please re-submit with corrected details.
+              Your access is currently blocked. Please re-submit your plan and payment details to restore access.
             </div>
           ) : null}
 
