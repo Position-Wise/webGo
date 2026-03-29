@@ -2,10 +2,16 @@
 
 import Link from "next/link"
 import { useMemo, useState } from "react"
+import CustomPlanInquiryForm from "@/components/inquiries/custom-plan-inquiry-form"
 import SubscribeForm from "@/components/subscribe/subscribe-form"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  CUSTOM_PLAN_OPTION_ID,
+  CUSTOM_PLAN_OPTION_NAME,
+  isCustomPlanOptionId,
+} from "@/lib/inquiries"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
 import paymentQR from "../subscribe/PaymentQR.jpg"
@@ -36,6 +42,7 @@ type SubscriptionOnboardingFlowProps = {
 }
 
 const NEW_FLOW_STEPS = ["Welcome", "Requirements", "Plan", "Payment", "Proof", "Relax"] as const
+const CUSTOM_FLOW_STEPS = ["Welcome", "Requirements", "Plan", "Custom Request"] as const
 const EDIT_FLOW_STEPS = ["Welcome", "Change Plan", "Repayment", "Proof", "Relax"] as const
 
 function normalizePlanKey(value: string | null | undefined) {
@@ -80,34 +87,68 @@ export default function SubscriptionOnboardingFlow({
 }: SubscriptionOnboardingFlowProps) {
   const waitingState = accessState === "waiting"
   const isEditMode = mode === "edit" || isBlocked
-  const steps = isEditMode ? EDIT_FLOW_STEPS : NEW_FLOW_STEPS
-
-  const [selectedPlanId, setSelectedPlanId] = useState(initialPlanId || plans[0]?.id || "")
-  const [stepIndex, setStepIndex] = useState(waitingState && !isEditMode ? steps.length - 1 : 0)
+  const [selectedPlanId, setSelectedPlanId] = useState(() => {
+    if (initialPlanId) return initialPlanId
+    if (plans[0]?.id) return plans[0].id
+    return isEditMode ? "" : CUSTOM_PLAN_OPTION_ID
+  })
+  const [stepIndex, setStepIndex] = useState(() => {
+    return waitingState && !isEditMode ? NEW_FLOW_STEPS.length - 1 : 0
+  })
   const [willRepay, setWillRepay] = useState(false)
 
+  const availablePlans = useMemo(() => {
+    if (isEditMode) return plans
+    if (plans.some((plan) => isCustomPlanOptionId(plan.id))) return plans
+
+    return [
+      ...plans,
+      {
+        id: CUSTOM_PLAN_OPTION_ID,
+        name: CUSTOM_PLAN_OPTION_NAME,
+        description: "Tell admin what you need and request a tailored plan.",
+        price: null,
+      },
+    ]
+  }, [isEditMode, plans])
+
+  const effectiveSelectedPlanId = useMemo(() => {
+    if (selectedPlanId && availablePlans.some((plan) => plan.id === selectedPlanId)) {
+      return selectedPlanId
+    }
+
+    return availablePlans[0]?.id ?? ""
+  }, [availablePlans, selectedPlanId])
+
+  const isCustomPlanSelected = !isEditMode && isCustomPlanOptionId(effectiveSelectedPlanId)
+  const steps = isEditMode ? EDIT_FLOW_STEPS : isCustomPlanSelected ? CUSTOM_FLOW_STEPS : NEW_FLOW_STEPS
+  const effectiveStepIndex = Math.min(stepIndex, steps.length - 1)
+
   const selectedPlan = useMemo(() => {
-    return plans.find((plan) => plan.id === selectedPlanId) ?? null
-  }, [plans, selectedPlanId])
+    return availablePlans.find((plan) => plan.id === effectiveSelectedPlanId) ?? null
+  }, [availablePlans, effectiveSelectedPlanId])
 
   const amountLabel = formatAmount(selectedPlan)
-  const progressValue = Math.round(((stepIndex + 1) / steps.length) * 100)
+  const progressValue = Math.round(((effectiveStepIndex + 1) / steps.length) * 100)
 
-  const proofStepIndex = isEditMode ? 3 : 4
+  const planStepIndex = isEditMode ? 1 : 2
+  const paymentStepIndex = !isEditMode && !isCustomPlanSelected ? 3 : -1
+  const customRequestStepIndex = !isEditMode && isCustomPlanSelected ? 3 : -1
+  const proofStepIndex = isEditMode ? 3 : !isCustomPlanSelected ? 4 : -1
+  const submitStepIndex = customRequestStepIndex >= 0 ? customRequestStepIndex : proofStepIndex
   const lastStepIndex = steps.length - 1
+  const hasLocalSuccessStep = lastStepIndex > submitStepIndex
 
   const canGoNext =
-    stepIndex < proofStepIndex &&
-    !(stepIndex === (isEditMode ? 1 : 2) && !selectedPlanId) &&
-    !(stepIndex === (!isEditMode ? 3 : -1) && !selectedPlan)
+    effectiveStepIndex < submitStepIndex && !(effectiveStepIndex === planStepIndex && !effectiveSelectedPlanId)
 
   function goNext() {
     if (!canGoNext) return
-    setStepIndex((current) => Math.min(lastStepIndex, current + 1))
+    setStepIndex(Math.min(lastStepIndex, effectiveStepIndex + 1))
   }
 
   function goPrev() {
-    setStepIndex((current) => Math.max(0, current - 1))
+    setStepIndex(Math.max(0, effectiveStepIndex - 1))
   }
 
   return (
@@ -134,10 +175,10 @@ export default function SubscriptionOnboardingFlow({
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">
-              Step {stepIndex + 1}: {steps[stepIndex]}
+              Step {effectiveStepIndex + 1}: {steps[effectiveStepIndex]}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {stepIndex + 1}/{steps.length}
+              {effectiveStepIndex + 1}/{steps.length}
             </p>
           </div>
 
@@ -150,7 +191,7 @@ export default function SubscriptionOnboardingFlow({
 
           <div className="flex flex-wrap gap-2">
             {steps.map((label, index) => {
-              const canOpenStep = index <= stepIndex
+              const canOpenStep = index <= effectiveStepIndex
 
               return (
                 <button
@@ -163,7 +204,7 @@ export default function SubscriptionOnboardingFlow({
                   }}
                   className={cn(
                     "rounded-full border px-3 py-1 text-xs transition-colors",
-                    stepIndex === index
+                    effectiveStepIndex === index
                       ? "border-primary bg-primary text-primary-foreground"
                       : canOpenStep
                         ? "border-border text-muted-foreground hover:text-foreground"
@@ -185,7 +226,7 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {!isEditMode && stepIndex === 0 ? (
+          {!isEditMode && effectiveStepIndex === 0 ? (
             <div className="rounded-lg border border-border/70 bg-muted/20 p-5">
               <div className="flex items-center gap-4">
                 <Avatar size="lg" className="h-14 w-14">
@@ -206,14 +247,14 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {!isEditMode && stepIndex === 1 ? (
+          {!isEditMode && effectiveStepIndex === 1 ? (
             <div className="rounded-lg border border-border/70 bg-muted/20 p-5 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">To unlock your access, complete these actions:</p>
               <ul className="mt-3 space-y-2">
                 <li>1. Choose your preferred membership plan.</li>
-                <li>2. Pay the exact amount using the payment QR code.</li>
-                <li>3. Upload a clear payment screenshot.</li>
-                <li>4. Submit and wait for admin verification.</li>
+                <li>2. Pay the exact amount using the payment QR code, or choose Custom for a tailored request.</li>
+                <li>3. Upload a clear payment screenshot, or send admin your custom-plan details.</li>
+                <li>4. Submit and wait for admin verification or follow-up.</li>
               </ul>
               <p className="mt-3">
                 After approval, your dashboard broadcasts and member tools will be unlocked automatically.
@@ -221,7 +262,7 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {isEditMode && stepIndex === 0 ? (
+          {isEditMode && effectiveStepIndex === 0 ? (
             <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
               <div className="flex items-center gap-4">
                 <Avatar size="lg" className="h-14 w-14">
@@ -253,15 +294,15 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {(isEditMode ? stepIndex === 1 : stepIndex === 2) ? (
+          {effectiveStepIndex === planStepIndex ? (
             <div className="space-y-3">
-              {!plans.length ? (
+              {!availablePlans.length ? (
                 <div className="rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   No public plans are configured yet. Ask admin to configure plans.
                 </div>
               ) : (
-                plans.map((plan) => {
-                  const isSelected = plan.id === selectedPlanId
+                availablePlans.map((plan) => {
+                  const isSelected = plan.id === effectiveSelectedPlanId
 
                   return (
                     <button
@@ -289,7 +330,7 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {!isEditMode && stepIndex === 3 ? (
+          {paymentStepIndex >= 0 && effectiveStepIndex === paymentStepIndex ? (
             <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
               <p className="text-sm font-medium text-foreground">Pay using this QR code</p>
 
@@ -311,7 +352,20 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {isEditMode && stepIndex === 2 ? (
+          {customRequestStepIndex >= 0 && effectiveStepIndex === customRequestStepIndex ? (
+            <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">Request a custom plan</p>
+                <p className="text-sm text-muted-foreground">
+                  Tell admin what you need. You do not need to upload payment proof for a custom inquiry.
+                </p>
+              </div>
+
+              <CustomPlanInquiryForm />
+            </div>
+          ) : null}
+
+          {isEditMode && effectiveStepIndex === 2 ? (
             <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
               <p className="text-sm font-medium text-foreground">Re-payment is optional</p>
               <p className="text-sm text-muted-foreground">
@@ -342,7 +396,7 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {stepIndex === proofStepIndex ? (
+          {proofStepIndex >= 0 && effectiveStepIndex === proofStepIndex ? (
             <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
               <p className="text-sm text-muted-foreground">
                 Upload your payment screenshot for
@@ -352,11 +406,13 @@ export default function SubscriptionOnboardingFlow({
               {selectedPlan ? (
                 <SubscribeForm
                   userId={userId}
-                  plans={plans.map((plan) => ({
-                    id: plan.id,
-                    name: plan.name,
-                    description: plan.description,
-                  }))}
+                  plans={availablePlans
+                    .filter((plan) => !isCustomPlanOptionId(plan.id))
+                    .map((plan) => ({
+                      id: plan.id,
+                      name: plan.name,
+                      description: plan.description,
+                    }))}
                   initialPlanId={selectedPlan.id}
                   lockedPlanId={selectedPlan.id}
                   hidePlanSelector
@@ -379,7 +435,7 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {stepIndex === lastStepIndex ? (
+          {hasLocalSuccessStep && effectiveStepIndex === lastStepIndex ? (
             <div className="space-y-4 rounded-lg border border-emerald-300/50 bg-emerald-50 p-5 text-emerald-900">
               <h3 className="text-lg font-semibold">
                 {isEditMode ? "Submission update completed" : "Submission completed"}
@@ -414,17 +470,21 @@ export default function SubscriptionOnboardingFlow({
               type="button"
               variant="outline"
               onClick={goPrev}
-              disabled={stepIndex === 0 || stepIndex === lastStepIndex}
+              disabled={effectiveStepIndex === 0 || (hasLocalSuccessStep && effectiveStepIndex === lastStepIndex)}
             >
               Prev
             </Button>
 
-            {stepIndex < proofStepIndex ? (
+            {effectiveStepIndex < submitStepIndex ? (
               <Button type="button" onClick={goNext} disabled={!canGoNext}>
                 Next
               </Button>
-            ) : stepIndex === proofStepIndex ? (
-              <p className="text-xs text-muted-foreground">Submit proof above to continue.</p>
+            ) : effectiveStepIndex === submitStepIndex ? (
+              <p className="text-xs text-muted-foreground">
+                {customRequestStepIndex >= 0
+                  ? "Submit your custom request above to continue."
+                  : "Submit proof above to continue."}
+              </p>
             ) : (
               <span className="text-xs text-muted-foreground">All steps completed</span>
             )}

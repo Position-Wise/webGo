@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import AskAdminDialog from "@/components/inquiries/ask-admin-dialog"
 import { Button } from "@/components/ui/button"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import {
@@ -104,7 +105,7 @@ export default async function ProfilePage() {
               )}
             </div>
 
-            <div className="pt-4">
+            <div className="flex flex-wrap gap-3 pt-4">
               <Button asChild>
                 <Link href={memberHomePath}>
                   {access.accessState === "approved"
@@ -116,6 +117,8 @@ export default async function ProfilePage() {
                         : "Complete subscription"}
                 </Link>
               </Button>
+
+              <AskAdminDialog />
             </div>
           </div>
         </div>

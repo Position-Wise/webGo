@@ -4,6 +4,7 @@ import {
 } from "@/lib/supabase/server"
 import type {
   BroadcastRow,
+  InquiryRow,
   MarketSymbolRow,
   ProfileRow,
   SubscriptionPlanRow,
@@ -280,6 +281,36 @@ export async function fetchAdminBroadcasts(limit = 20) {
     if (!row.expires_at) return true
     return row.expires_at > nowIso
   })
+}
+
+export async function fetchAdminInquiries() {
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase
+    .from("inquiries")
+    .select(
+      `
+        id,
+        user_id,
+        type,
+        message,
+        metadata,
+        status,
+        created_at,
+        profiles (
+          full_name,
+          avatar_url
+        )
+      `
+    )
+    .order("created_at", { ascending: false })
+
+  if (error) {
+    console.error("Inquiries query failed:", error)
+    return []
+  }
+
+  return (data as InquiryRow[] | null) ?? []
 }
 
 export async function fetchAdminMarketSymbols() {

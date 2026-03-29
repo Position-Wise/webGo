@@ -53,6 +53,26 @@ export type BroadcastRow = {
   created_at: string | null
 }
 
+export type InquiryRow = {
+  id: string
+  user_id: string
+  type: string | null
+  message: string
+  metadata?: Record<string, unknown> | null
+  status?: string | null
+  created_at?: string | null
+  profiles?:
+    | {
+        full_name?: string | null
+        avatar_url?: string | null
+      }
+    | {
+        full_name?: string | null
+        avatar_url?: string | null
+      }[]
+    | null
+}
+
 export type MarketSymbolRow = {
   id: string
   symbol: string | null
