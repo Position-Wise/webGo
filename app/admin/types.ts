@@ -31,6 +31,7 @@ export type SubscriptionPlanRow = {
   allow_trade?: boolean | null
   allow_investment?: boolean | null
   trade_limit_per_week?: number | null
+  plan_type?: string | null
 }
 
 export type BroadcastRow = {
