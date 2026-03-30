@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { updatePlan } from "../actions"
-import { toTitleCase } from "../helpers"
-import type { SubscriptionPlanRow } from "../types"
-import { Button } from "@/components/ui/button"
+import { useState } from "react";
+import { updatePlan } from "../actions";
+import { toTitleCase } from "../helpers";
+import type { SubscriptionPlanRow } from "../types";
+import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerContent,
@@ -12,10 +12,10 @@ import {
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
-} from "@/components/ui/drawer"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import LoadingSubmitButton from "@/components/ui/loading-submit-button"
+} from "@/components/ui/drawer";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import LoadingSubmitButton from "@/components/ui/loading-submit-button";
 import {
   Table,
   TableBody,
@@ -23,65 +23,66 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
+import { log } from "console";
 
 type PlansTableViewProps = {
-  plans: SubscriptionPlanRow[]
-}
+  plans: SubscriptionPlanRow[];
+};
 
 function getPlanName(plan: SubscriptionPlanRow) {
-  const normalized = (plan.name ?? "").trim().toLowerCase()
-  if (normalized === "growth") return "pro"
-  if (normalized === "elite") return "premium"
-  return normalized || "basic"
+  const normalized = (plan.name ?? "").trim().toLowerCase();
+  if (normalized === "growth") return "pro";
+  if (normalized === "elite") return "premium";
+  return normalized || "basic";
 }
 
 function isSystemPlan(plan: SubscriptionPlanRow) {
-  const name = getPlanName(plan)
+  const name = getPlanName(plan);
   if (typeof plan.is_public === "boolean") {
-    return !plan.is_public
+    return !plan.is_public;
   }
-  return name === "new" || name === "admin"
+  return name === "new" || name === "admin";
 }
 
 function getDescription(plan: SubscriptionPlanRow) {
-  const fromDb = (plan.description ?? "").trim()
-  if (fromDb) return fromDb
+  const fromDb = (plan.description ?? "").trim();
+  if (fromDb) return fromDb;
 
-  const name = getPlanName(plan)
-  if (name === "basic") return "Entry access for public onboarding"
-  if (name === "pro") return "Trade signals and active intelligence"
-  if (name === "premium") return "Full access and high-touch support"
-  if (name === "new") return "Assigned automatically on signup"
-  if (name === "admin") return "Internal admin access"
-  return "Custom plan"
+  const name = getPlanName(plan);
+  if (name === "basic") return "Entry access for public onboarding";
+  if (name === "pro") return "Trade signals and active intelligence";
+  if (name === "premium") return "Full access and high-touch support";
+  if (name === "new") return "Assigned automatically on signup";
+  if (name === "admin") return "Internal admin access";
+  return "Custom plan";
 }
 
 function getAllowTrade(plan: SubscriptionPlanRow) {
-  if (typeof plan.allow_trade === "boolean") return plan.allow_trade
-  const name = getPlanName(plan)
-  return name === "pro" || name === "premium" || name === "admin"
+  if (typeof plan.allow_trade === "boolean") return plan.allow_trade;
+  const name = getPlanName(plan);
+  return name === "pro" || name === "premium" || name === "admin";
 }
 
 function getAllowInvestment(plan: SubscriptionPlanRow) {
-  if (typeof plan.allow_investment === "boolean") return plan.allow_investment
-  return getPlanName(plan) !== "new"
+  if (typeof plan.allow_investment === "boolean") return plan.allow_investment;
+  return getPlanName(plan) !== "new";
 }
 
 function getTradeLimit(plan: SubscriptionPlanRow) {
   if (typeof plan.trade_limit_per_week === "number") {
-    return Math.max(0, Math.floor(plan.trade_limit_per_week))
+    return Math.max(0, Math.floor(plan.trade_limit_per_week));
   }
 
-  const name = getPlanName(plan)
-  if (name === "basic" || name === "new") return 0
-  if (name === "pro") return 2
-  if (name === "premium" || name === "admin") return 99
-  return 0
+  const name = getPlanName(plan);
+  if (name === "basic" || name === "new") return 0;
+  if (name === "pro") return 2;
+  if (name === "premium" || name === "admin") return 99;
+  return 0;
 }
 
 function getVisibilityLabel(plan: SubscriptionPlanRow) {
-  return isSystemPlan(plan) ? "System" : "Public"
+  return isSystemPlan(plan) ? "System" : "Public";
 }
 
 function FeatureFlag({ enabled }: { enabled: boolean }) {
@@ -89,15 +90,26 @@ function FeatureFlag({ enabled }: { enabled: boolean }) {
     <span className={enabled ? "text-emerald-700" : "text-muted-foreground"}>
       {enabled ? "Yes" : "No"}
     </span>
-  )
+  );
+}
+
+function getPlanTypeLabel(plan: SubscriptionPlanRow) {
+  const trade = getAllowTrade(plan);
+  const invest = getAllowInvestment(plan);
+
+  if (trade && invest) return "Trsder & Investor";
+  if (trade) return "Trader";
+  if (invest) return "Investor";
+
+  return "—";
 }
 
 function PlanViewDrawer({ plan }: { plan: SubscriptionPlanRow }) {
-  const planName = getPlanName(plan)
-  const description = getDescription(plan)
-  const allowTrade = getAllowTrade(plan)
-  const allowInvestment = getAllowInvestment(plan)
-  const tradeLimit = getTradeLimit(plan)
+  const planName = getPlanName(plan);
+  const description = getDescription(plan);
+  const allowTrade = getAllowTrade(plan);
+  const allowInvestment = getAllowInvestment(plan);
+  const tradeLimit = getTradeLimit(plan);
 
   return (
     <Drawer>
@@ -108,57 +120,42 @@ function PlanViewDrawer({ plan }: { plan: SubscriptionPlanRow }) {
       </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader>
-          <DrawerTitle>
-            Plan Details
-          </DrawerTitle>
+          <DrawerTitle>Plan Details</DrawerTitle>
           <DrawerDescription>
             Read-only plan capability snapshot.
           </DrawerDescription>
         </DrawerHeader>
 
         <div className="space-y-2 text-sm">
-          <p>
-            Plan: {toTitleCase(planName)}
-          </p>
-          <p>
-            Type: {getVisibilityLabel(plan)}
-          </p>
-          <p>
-            Description: {description}
-          </p>
-          <p>
-            Trade allowed: {allowTrade ? "Yes" : "No"}
-          </p>
-          <p>
-            Investment allowed: {allowInvestment ? "Yes" : "No"}
-          </p>
-          <p>
-            Trade limit per week: {tradeLimit}
-          </p>
+          <p>Plan: {toTitleCase(planName)}</p>
+          <p>Visibility: {getVisibilityLabel(plan)}</p>
+          <p>Plan Type: {getPlanTypeLabel(plan)}</p>
+          <p>Description: {description}</p>
+          <p>Trade allowed: {allowTrade ? "Yes" : "No"}</p>
+          <p>Investment allowed: {allowInvestment ? "Yes" : "No"}</p>
+          <p>Trade limit per week: {tradeLimit}</p>
         </div>
       </DrawerContent>
     </Drawer>
-  )
+  );
 }
 
 function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
-  const [allowTrade, setAllowTrade] = useState(getAllowTrade(plan))
-  const [allowInvestment, setAllowInvestment] = useState(getAllowInvestment(plan))
-  const [tradeLimit, setTradeLimit] = useState(String(getTradeLimit(plan)))
-  const [description, setDescription] = useState(getDescription(plan))
+  const [allowTrade, setAllowTrade] = useState(getAllowTrade(plan));
+  const [allowInvestment, setAllowInvestment] = useState(
+    getAllowInvestment(plan),
+  );
+  const [tradeLimit, setTradeLimit] = useState(String(getTradeLimit(plan)));
+  const [description, setDescription] = useState(getDescription(plan));
 
   return (
     <Drawer>
       <DrawerTrigger asChild>
-        <Button size="sm">
-          Edit
-        </Button>
+        <Button size="sm">Edit</Button>
       </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader>
-          <DrawerTitle>
-            Edit Plan
-          </DrawerTitle>
+          <DrawerTitle>Edit Plan</DrawerTitle>
           <DrawerDescription>
             Update trade and investment permissions.
           </DrawerDescription>
@@ -166,7 +163,11 @@ function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
 
         <form action={updatePlan} className="space-y-4">
           <input type="hidden" name="planId" value={plan.id} />
-          <input type="hidden" name="allowTrade" value={allowTrade ? "true" : "false"} />
+          <input
+            type="hidden"
+            name="allowTrade"
+            value={allowTrade ? "true" : "false"}
+          />
           <input
             type="hidden"
             name="allowInvestment"
@@ -200,9 +201,7 @@ function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
 
           <div className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2">
             <div>
-              <p className="text-sm font-medium">
-                Trade Allowed
-              </p>
+              <p className="text-sm font-medium">Trade Allowed</p>
               <p className="text-xs text-muted-foreground">
                 Enable trade broadcast access
               </p>
@@ -212,14 +211,15 @@ function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
 
           <div className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2">
             <div>
-              <p className="text-sm font-medium">
-                Investment Allowed
-              </p>
+              <p className="text-sm font-medium">Investment Allowed</p>
               <p className="text-xs text-muted-foreground">
                 Enable investment broadcast access
               </p>
             </div>
-            <Switch checked={allowInvestment} onCheckedChange={setAllowInvestment} />
+            <Switch
+              checked={allowInvestment}
+              onCheckedChange={setAllowInvestment}
+            />
           </div>
 
           <div className="space-y-1">
@@ -241,7 +241,7 @@ function PlanEditDrawer({ plan }: { plan: SubscriptionPlanRow }) {
         </form>
       </DrawerContent>
     </Drawer>
-  )
+  );
 }
 
 export default function PlansTableView({ plans }: PlansTableViewProps) {
@@ -249,27 +249,14 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>
-            Plan
-          </TableHead>
-          <TableHead>
-            Type
-          </TableHead>
-          <TableHead>
-            Description
-          </TableHead>
-          <TableHead>
-            Trades
-          </TableHead>
-          <TableHead>
-            Investments
-          </TableHead>
-          <TableHead>
-            Limit / Week
-          </TableHead>
-          <TableHead className="text-right">
-            Actions
-          </TableHead>
+          <TableHead>Plan</TableHead>
+          <TableHead>Visibility</TableHead>
+          <TableHead>Plan Type</TableHead>
+          <TableHead>Description</TableHead>
+          <TableHead>Trades</TableHead>
+          <TableHead>Investments</TableHead>
+          <TableHead>Limit / Week</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -278,9 +265,8 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
             <TableCell className="font-medium">
               {toTitleCase(getPlanName(plan))}
             </TableCell>
-            <TableCell>
-              {getVisibilityLabel(plan)}
-            </TableCell>
+            <TableCell>{getVisibilityLabel(plan)}</TableCell>
+            <TableCell>{getPlanTypeLabel(plan)}</TableCell>
             <TableCell className="max-w-[320px] whitespace-normal text-muted-foreground">
               {getDescription(plan)}
             </TableCell>
@@ -290,9 +276,7 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
             <TableCell>
               <FeatureFlag enabled={getAllowInvestment(plan)} />
             </TableCell>
-            <TableCell>
-              {getTradeLimit(plan)}
-            </TableCell>
+            <TableCell>{getTradeLimit(plan)}</TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-2">
                 <PlanViewDrawer plan={plan} />
@@ -303,6 +287,5 @@ export default function PlansTableView({ plans }: PlansTableViewProps) {
         ))}
       </TableBody>
     </Table>
-  )
+  );
 }
-

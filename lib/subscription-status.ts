@@ -1,6 +1,11 @@
-export type SubscriptionStatus = "pending" | "active" | "rejected" | null
+export type SubscriptionStatus =
+  | "pending"
+  | "active"
+  | "cancelled"
+  | "expired"
+  | null
 
-export type AccessState = "new_user" | "waiting" | "approved" | "rejected"
+export type AccessState = "new_user" | "waiting" | "approved" | "blocked"
 
 function normalizeKey(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase()
@@ -33,11 +38,18 @@ export function normalizeSubscriptionStatus(
   }
 
   if (
+    normalized === "cancelled" ||
+    normalized === "canceled" ||
     normalized === "rejected" ||
     normalized === "declined" ||
-    normalized === "denied"
+    normalized === "denied" ||
+    normalized === "blocked"
   ) {
-    return "rejected"
+    return "cancelled"
+  }
+
+  if (normalized === "expired" || normalized === "lapsed") {
+    return "expired"
   }
 
   return null
@@ -60,11 +72,15 @@ export function getAccessStateFromStatus(
     return "approved"
   }
 
+  if (normalized === "blocked") {
+    return "blocked"
+  }
+
   const status = normalizeSubscriptionStatus(normalized)
 
   if (status === "active") return "approved"
   if (status === "pending") return "waiting"
-  if (status === "rejected") return "rejected"
+  if (status === "cancelled" || status === "expired") return "blocked"
 
   return "new_user"
 }
@@ -72,13 +88,24 @@ export function getAccessStateFromStatus(
 export function getAccessStateLabel(state: AccessState) {
   if (state === "approved") return "Approved"
   if (state === "waiting") return "Pending Approval"
-  if (state === "rejected") return "Rejected"
+  if (state === "blocked") return "Blocked"
   return "Not Submitted"
+}
+
+export function getSubscriptionStatusLabel(value: string | null | undefined) {
+  const status = normalizeSubscriptionStatus(value)
+
+  if (status === "pending") return "Pending"
+  if (status === "active") return "Active"
+  if (status === "cancelled") return "Cancelled"
+  if (status === "expired") return "Expired"
+  return "No Subscription"
 }
 
 export function getMemberHomePathForState(state: AccessState) {
   if (state === "approved") return "/dashboard"
   if (state === "waiting") return "/waiting"
+  if (state === "blocked") return "/subscribe?mode=edit"
   return "/subscribe"
 }
 

@@ -1,6 +1,11 @@
-export const ROLES = ["customer", "admin"] as const
-export const PLANS = ["basic", "pro", "premium", "new", "admin"] as const
-export const STATUSES = ["pending", "active", "rejected"] as const
+export const ROLES = [
+  "customer",
+  "trader",
+  "investor",
+  "admin",
+  "master_admin",
+] as const
+export const STATUSES = ["pending", "active", "cancelled", "expired"] as const
 export const BROADCAST_AUDIENCES = [
   "all",
   "invest",
@@ -8,6 +13,7 @@ export const BROADCAST_AUDIENCES = [
   "basic",
   "pro",
   "premium",
+  "admin",
 ] as const
 export const BROADCAST_DURATIONS = ["24h", "week", "month", "forever"] as const
 export const BROADCAST_TYPES = ["trade", "investment", "announcement"] as const
@@ -35,7 +41,11 @@ export function formatBroadcastDate(value: string | null) {
 }
 
 export function toTitleCase(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1)
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ")
 }
 
 export function toDurationLabel(duration: string | null) {

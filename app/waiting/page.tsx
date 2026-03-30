@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
+import { getMemberHomePathForState } from "@/lib/subscription-status"
 
 export const dynamic = "force-dynamic"
 
@@ -36,17 +37,8 @@ export default async function WaitingPage() {
     redirect("/dashboard")
   }
 
-  const hasSubmissionEvidence = Boolean(
-    (access.subscription?.payment_proof ?? "").trim() ||
-      (access.subscription?.submitted_at ?? "").trim()
-  )
-
-  if (access.accessState === "waiting" && !hasSubmissionEvidence) {
-    redirect("/subscribe")
-  }
-
   if (access.accessState !== "waiting") {
-    redirect("/subscribe")
+    redirect(getMemberHomePathForState(access.accessState))
   }
 
   const submittedAt = formatDate(access.subscription?.submitted_at ?? null)
@@ -120,5 +112,3 @@ export default async function WaitingPage() {
     </main>
   )
 }
-
-

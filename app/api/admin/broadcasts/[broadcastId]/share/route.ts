@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { resolveRoleForUser, type MinimalDbClient } from "@/app/admin/access"
-import { isAdminRole } from "@/lib/roles"
+import { resolveCurrentUserIsAdmin, type MinimalDbClient } from "@/app/admin/access"
 import { getBroadcastSharePath, isShareableBroadcastId } from "@/lib/broadcast-share"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
@@ -57,12 +56,12 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const callerRole = await resolveRoleForUser(
+  const { isAdmin } = await resolveCurrentUserIsAdmin(
     user.id,
     supabase as unknown as MinimalDbClient
   )
 
-  if (!isAdminRole(callerRole)) {
+  if (!isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

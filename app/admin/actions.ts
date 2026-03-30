@@ -10,7 +10,11 @@ import {
   ROLES,
   STATUSES,
 } from "./helpers"
-import { resolveRoleForUser, type MinimalDbClient } from "./access"
+import {
+  resolveCurrentUserIsAdmin,
+  resolveRoleForUser,
+  type MinimalDbClient,
+} from "./access"
 
 const ADMIN_ROUTES_TO_REVALIDATE = [
   "/admin",
@@ -68,73 +72,27 @@ function calculateExpiration(duration: string) {
   }
 }
 
-async function getCallerRole() {
+async function getCallerAccess() {
   const supabase = await createSupabaseServerClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return { supabase, callerRole: null as string | null, userId: null as string | null }
+    return {
+      supabase,
+      callerRole: null as string | null,
+      isAdmin: false,
+      userId: null as string | null,
+    }
   }
 
-  const callerRole =
-    (await resolveRoleForUser(
-      user.id,
-      supabase as unknown as MinimalDbClient
-    )) ?? null
+  const { role, isAdmin } = await resolveCurrentUserIsAdmin(
+    user.id,
+    supabase as unknown as MinimalDbClient
+  )
 
-  return { supabase, callerRole, userId: user.id }
-}
-
-function hasColumn(row: Record<string, unknown>, column: string) {
-  return Object.prototype.hasOwnProperty.call(row, column)
-}
-
-async function syncProfileTableAccess(
-  db: Awaited<ReturnType<typeof createSupabaseServerClient>>,
-  userId: string,
-  targetRole: string | null,
-  plan: string | null,
-  status: string | null
-) {
-  const byIdQuery = await db
-    .from("profile")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle()
-
-  let profileRow = (byIdQuery.data as Record<string, unknown> | null) ?? null
-  let idColumn: "id" | "user_id" | null = profileRow ? "id" : null
-
-  if (!profileRow) {
-    const byUserIdQuery = await db
-      .from("profile")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle()
-
-    profileRow = (byUserIdQuery.data as Record<string, unknown> | null) ?? null
-    idColumn = profileRow ? "user_id" : null
-  }
-
-  if (!profileRow || !idColumn) return
-
-  const payload: Record<string, string | null> = {}
-
-  if (targetRole && hasColumn(profileRow, "role")) payload.role = targetRole
-  if (hasColumn(profileRow, "status")) payload.status = status
-  if (hasColumn(profileRow, "plan")) payload.plan = plan
-  if (hasColumn(profileRow, "subscription_status")) payload.subscription_status = status
-  if (hasColumn(profileRow, "subscription_plan")) payload.subscription_plan = plan
-  if (hasColumn(profileRow, "membership_plan")) payload.membership_plan = plan
-
-  if (!Object.keys(payload).length) return
-
-  await db
-    .from("profile")
-    .update(payload)
-    .eq(idColumn, userId)
+  return { supabase, callerRole: role ?? null, isAdmin, userId: user.id }
 }
 
 function normalizeRole(value: string | null) {
@@ -161,13 +119,18 @@ function normalizeRole(value: string | null) {
 
 function normalizeStatus(value: string | null) {
   const normalized = (value ?? "").trim().toLowerCase()
-  if (!normalized || normalized === "none" || normalized === "null") {
+  if (
+    !normalized ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "__current__"
+  ) {
     return null
   }
   if (STATUSES.includes(normalized as (typeof STATUSES)[number])) {
     return normalized
   }
-  return "pending"
+  return null
 }
 
 function revalidateAdminRoutes() {
@@ -230,21 +193,21 @@ async function updateUserAccessInternal(formData: FormData): Promise<UpdateUserA
       ? requestedPlanIdRaw
       : null
 
-  const currentPlanName = ((formData.get("currentPlanName") as string | null) ?? "")
-    .trim()
-    .toLowerCase()
-
   if (!userId) {
     return { ok: false, error: "Missing user id." }
+  }
+
+  if (!status) {
+    return { ok: false, error: "Missing subscription status." }
   }
 
   if (subscriptionEndDateRaw && !subscriptionEndDate) {
     return { ok: false, error: "Invalid subscription end date." }
   }
 
-  const { supabase, callerRole } = await getCallerRole()
+  const { supabase, isAdmin } = await getCallerAccess()
 
-  if (!isAdminRole(callerRole)) {
+  if (!isAdmin) {
     return { ok: false, error: "Only admins can update users." }
   }
 
@@ -262,48 +225,22 @@ async function updateUserAccessInternal(formData: FormData): Promise<UpdateUserA
     }
   }
 
-  let selectedPlanName: string | null = null
-
-  if (requestedPlanId) {
-    const { data: planRow } = await db
-      .from("subscription_plans")
-      .select("id,name")
-      .eq("id", requestedPlanId)
-      .maybeSingle()
-
-    selectedPlanName = (planRow as { name?: string | null } | null)?.name ?? null
-  }
-
   const subscriptionPayload: Record<string, string | null> = {
     user_id: userId,
     status,
   }
 
   if (requestedPlanId) {
-    subscriptionPayload.plan_id = requestedPlanId
+    subscriptionPayload.subscription_plan_id = requestedPlanId
   }
 
   if (subscriptionEndDate) {
     subscriptionPayload.ends_at = subscriptionEndDate
-    subscriptionPayload.current_period_end = subscriptionEndDate
   }
 
-  let subscriptionWrite = await db
+  const subscriptionWrite = await db
     .from("user_subscriptions")
     .upsert(subscriptionPayload, { onConflict: "user_id" })
-
-  if (subscriptionWrite.error && requestedPlanId) {
-    subscriptionWrite = await db
-      .from("user_subscriptions")
-      .upsert(
-        {
-          user_id: userId,
-          status,
-          subscription_plan_id: requestedPlanId,
-        },
-        { onConflict: "user_id" }
-      )
-  }
 
   if (subscriptionWrite.error) {
     console.error("Subscription update error:", subscriptionWrite.error)
@@ -311,16 +248,6 @@ async function updateUserAccessInternal(formData: FormData): Promise<UpdateUserA
       ok: false,
       error: subscriptionWrite.error.message ?? "Failed to update subscription.",
     }
-  }
-
-  const rawPlanForProfile = selectedPlanName?.trim() || currentPlanName || null
-  const planForProfile = rawPlanForProfile ? rawPlanForProfile.toLowerCase() : null
-
-  try {
-    await syncProfileTableAccess(db, userId, targetRole, planForProfile, status)
-  } catch (profileSyncError) {
-    console.error("Profile sync error:", profileSyncError)
-    return { ok: false, error: "Subscription updated, but profile sync failed." }
   }
 
   revalidateAdminRoutes()
@@ -347,9 +274,6 @@ const USER_DELETE_CLEANUP_STEPS: UserDeleteCleanupStep[] = [
   { table: "broadcast_feedback", column: "user_id" },
   { table: "user_subscriptions", column: "user_id" },
   { table: "profiles", column: "id" },
-  { table: "profiles", column: "user_id" },
-  { table: "profile", column: "id" },
-  { table: "profile", column: "user_id" },
 ]
 
 function normalizeUserId(value: string | null | undefined) {
@@ -473,8 +397,8 @@ export async function deleteUserWithResult(userId: string): Promise<DeleteUserRe
     return { ok: false, error: "Missing user id." }
   }
 
-  const { supabase, callerRole, userId: callerUserId } = await getCallerRole()
-  if (!isAdminRole(callerRole)) {
+  const { supabase, isAdmin, userId: callerUserId } = await getCallerAccess()
+  if (!isAdmin) {
     return { ok: false, error: "Only admins can remove users." }
   }
 
@@ -538,9 +462,9 @@ export async function publishBroadcast(formData: FormData): Promise<void> {
 
   if (!message) return
 
-  const { supabase, callerRole, userId } = await getCallerRole()
+  const { supabase, isAdmin, userId } = await getCallerAccess()
 
-  if (!isAdminRole(callerRole) || !userId) return
+  if (!isAdmin || !userId) return
 
   const db = supabase
   const expiresAt = calculateExpiration(duration)
@@ -609,8 +533,8 @@ export async function updateBroadcast(formData: FormData): Promise<void> {
 
   if (!broadcastId || !message) return
 
-  const { supabase, callerRole } = await getCallerRole()
-  if (!isAdminRole(callerRole)) return
+  const { supabase, isAdmin } = await getCallerAccess()
+  if (!isAdmin) return
 
   const db = supabase
   const expiresAt = calculateExpiration(duration)?.toISOString() ?? null
@@ -658,8 +582,8 @@ export async function deleteBroadcast(formData: FormData): Promise<void> {
   const broadcastId = (formData.get("broadcastId") as string | null)?.trim() ?? ""
   if (!broadcastId) return
 
-  const { supabase, callerRole } = await getCallerRole()
-  if (!isAdminRole(callerRole)) return
+  const { supabase, isAdmin } = await getCallerAccess()
+  if (!isAdmin) return
 
   const db = supabase
   await db.from("admin_broadcasts").delete().eq("id", broadcastId)
@@ -675,8 +599,8 @@ export async function createMarketSymbol(formData: FormData): Promise<void> {
 
   if (!symbol) return
 
-  const { supabase, callerRole, userId } = await getCallerRole()
-  if (!isAdminRole(callerRole) || !userId) return
+  const { supabase, isAdmin, userId } = await getCallerAccess()
+  if (!isAdmin || !userId) return
 
   const db = supabase
   await db.from("market_symbols").insert({
@@ -700,8 +624,8 @@ export async function updateMarketSymbol(formData: FormData): Promise<void> {
 
   if (!id || !symbol) return
 
-  const { supabase, callerRole, userId } = await getCallerRole()
-  if (!isAdminRole(callerRole) || !userId) return
+  const { supabase, isAdmin, userId } = await getCallerAccess()
+  if (!isAdmin || !userId) return
 
   const db = supabase
   await db
@@ -723,8 +647,8 @@ export async function deleteMarketSymbol(formData: FormData): Promise<void> {
   const id = ((formData.get("id") as string | null) ?? "").trim()
   if (!id) return
 
-  const { supabase, callerRole } = await getCallerRole()
-  if (!isAdminRole(callerRole)) return
+  const { supabase, isAdmin } = await getCallerAccess()
+  if (!isAdmin) return
 
   const db = supabase
   await db.from("market_symbols").delete().eq("id", id)
@@ -752,9 +676,9 @@ async function updatePlanPermissions(params: {
   tradeLimitPerWeek: number | null
   description?: string | null
 }) {
-  const { supabase, callerRole } = await getCallerRole()
+  const { supabase, isAdmin } = await getCallerAccess()
 
-  if (!isAdminRole(callerRole)) return
+  if (!isAdmin) return
 
   const db = supabase
   const updatePayload: Record<string, unknown> = {

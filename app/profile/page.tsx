@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import AskAdminDialog from "@/components/inquiries/ask-admin-dialog"
 import { Button } from "@/components/ui/button"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import {
@@ -41,13 +42,11 @@ export default async function ProfilePage() {
   return (
     <div className="min-h-screen bg-background p-10">
       <div className="max-w-3xl mx-auto space-y-8">
-
         <h1 className="text-3xl font-semibold">
           Profile
         </h1>
 
         <div className="rounded-xl border border-border bg-card p-8 space-y-6">
-
           <div className="flex items-center gap-6">
             <Avatar className="h-20 w-20">
               <AvatarImage src={avatarUrl} />
@@ -106,16 +105,20 @@ export default async function ProfilePage() {
               )}
             </div>
 
-            <div className="pt-4">
+            <div className="flex flex-wrap gap-3 pt-4">
               <Button asChild>
                 <Link href={memberHomePath}>
                   {access.accessState === "approved"
                     ? "Go to dashboard"
                     : access.accessState === "waiting"
                       ? "View approval status"
-                      : "Complete subscription"}
+                      : access.accessState === "blocked"
+                        ? "Resubmit subscription"
+                        : "Complete subscription"}
                 </Link>
               </Button>
+
+              <AskAdminDialog />
             </div>
           </div>
         </div>

@@ -12,6 +12,7 @@ export type DashboardBroadcast = {
   message: string
   audience: string | null
   broadcast_type?: "trade" | "investment" | "announcement" | null
+  dashboard_tab: DashboardTab
   posted_by_name?: string | null
   created_at: string | null
   user_feedback?: "profit" | "loss" | null
@@ -55,6 +56,7 @@ export default function DashboardTabView({
   tradeLimitPerWeek,
   tradeConsumedThisWeek,
   consumedTradeBroadcastIds,
+  allowFeedback,
 }: {
   broadcasts: DashboardBroadcast[]
   allowTrade: boolean
@@ -62,14 +64,45 @@ export default function DashboardTabView({
   tradeLimitPerWeek: number
   tradeConsumedThisWeek: number
   consumedTradeBroadcastIds: string[]
+  allowFeedback: boolean
 }) {
   const router = useRouter()
   const [feedbackOverrides, setFeedbackOverrides] = useState<
-    Record<string, "profit" | "loss">
+    Record<string, "profit" | "loss" | null>
   >({})
+  const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({})
   const [pendingFeedbackKey, setPendingFeedbackKey] = useState<string | null>(null)
   const [newlyConsumedTradeIds, setNewlyConsumedTradeIds] = useState<Record<string, true>>({})
   const [isTradeUsagePending, setIsTradeUsagePending] = useState(false)
+
+  const initialFeedbackByBroadcast = useMemo(() => {
+    return broadcasts.reduce<Record<string, "profit" | "loss" | null>>((acc, broadcast) => {
+      acc[broadcast.id] = broadcast.user_feedback ?? null
+      return acc
+    }, {})
+  }, [broadcasts])
+
+  useEffect(() => {
+    setFeedbackOverrides((current) => {
+      let hasChanges = false
+      const next = { ...current }
+
+      for (const [broadcastId, value] of Object.entries(current)) {
+        if (!Object.prototype.hasOwnProperty.call(initialFeedbackByBroadcast, broadcastId)) {
+          delete next[broadcastId]
+          hasChanges = true
+          continue
+        }
+
+        if ((initialFeedbackByBroadcast[broadcastId] ?? null) === value) {
+          delete next[broadcastId]
+          hasChanges = true
+        }
+      }
+
+      return hasChanges ? next : current
+    })
+  }, [initialFeedbackByBroadcast])
 
   const initialConsumedTradeSet = useMemo(() => {
     const set = new Set<string>()
@@ -121,39 +154,8 @@ export default function DashboardTabView({
   const tabFilteredBroadcasts = useMemo(() => {
     if (!availableTabs.length) return []
 
-    return broadcasts.filter((broadcast) => {
-      const audience = (broadcast.audience ?? "all").toLowerCase()
-      const broadcastType = (broadcast.broadcast_type ?? "investment").toLowerCase()
-      const matchesPlanAudience =
-        audience === "all" ||
-        audience === "basic" ||
-        audience === "pro" ||
-        audience === "premium" ||
-        audience === "admin" ||
-        audience === "growth" ||
-        audience === "elite"
-
-      if (audience === "invest" && !allowInvestment) return false
-      if (audience === "trade" && !allowTrade) return false
-
-      if (activeTab === "announcement") {
-        return broadcastType === "announcement"
-      }
-
-      if (broadcastType === "announcement") {
-        return false
-      }
-
-      if (audience === "invest" || audience === "trade") {
-        return audience === activeTab
-      }
-
-      if (!matchesPlanAudience) return false
-
-      if (activeTab === "trade") return broadcastType === "trade"
-      return broadcastType === "investment"
-    })
-  }, [activeTab, allowInvestment, allowTrade, availableTabs.length, broadcasts])
+    return broadcasts.filter((broadcast) => broadcast.dashboard_tab === activeTab)
+  }, [activeTab, availableTabs.length, broadcasts])
 
   const tradeTabResult = useMemo(() => {
     if (activeTab !== "trade") {
@@ -253,7 +255,21 @@ export default function DashboardTabView({
 
   async function submitFeedback(broadcastId: string, outcome: "profit" | "loss") {
     const pendingKey = `${broadcastId}:${outcome}`
+    const previousFeedback =
+      Object.prototype.hasOwnProperty.call(feedbackOverrides, broadcastId)
+        ? feedbackOverrides[broadcastId] ?? null
+        : initialFeedbackByBroadcast[broadcastId] ?? null
+
     setPendingFeedbackKey(pendingKey)
+    setFeedbackOverrides((current) => ({
+      ...current,
+      [broadcastId]: outcome,
+    }))
+    setFeedbackErrors((current) => {
+      const next = { ...current }
+      delete next[broadcastId]
+      return next
+    })
 
     try {
       const response = await fetch("/api/broadcast-feedback", {
@@ -274,12 +290,24 @@ export default function DashboardTabView({
         throw new Error(payload?.error || "Failed to save feedback.")
       }
 
-      setFeedbackOverrides((current) => ({
-        ...current,
-        [broadcastId]: outcome,
-      }))
+      router.refresh()
     } catch (error) {
       console.error("Broadcast feedback error:", error)
+      setFeedbackOverrides((current) => {
+        const next = { ...current }
+        if (previousFeedback === null) {
+          delete next[broadcastId]
+          return next
+        }
+
+        next[broadcastId] = previousFeedback
+        return next
+      })
+      setFeedbackErrors((current) => ({
+        ...current,
+        [broadcastId]:
+          error instanceof Error ? error.message : "Failed to save feedback.",
+      }))
     } finally {
       setPendingFeedbackKey(null)
     }
@@ -414,12 +442,14 @@ export default function DashboardTabView({
                   const isPending =
                     pendingFeedbackKey?.startsWith(`${broadcast.id}:`) ?? false
                   const showOutcomeButtons =
+                    allowFeedback &&
                     (broadcast.broadcast_type ?? "investment") !== "announcement"
 
                   if (!showOutcomeButtons) return null
 
                   return (
-                    <div className="mb-3 flex flex-wrap gap-2">
+                    <div className="mb-3 space-y-2">
+                      <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         disabled={isPending}
@@ -452,6 +482,12 @@ export default function DashboardTabView({
                           ? "Saving..."
                           : "Loss"}
                       </button>
+                      </div>
+                      {feedbackErrors[broadcast.id] ? (
+                        <p className="text-xs text-destructive">
+                          {feedbackErrors[broadcast.id]}
+                        </p>
+                      ) : null}
                     </div>
                   )
                 })()}

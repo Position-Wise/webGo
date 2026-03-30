@@ -25,8 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  getAccessStateFromStatus,
-  getAccessStateLabel,
+  getSubscriptionStatusLabel,
   normalizeSubscriptionStatus,
 } from "@/lib/subscription-status"
 import { isAdminRole } from "@/lib/roles"
@@ -44,10 +43,10 @@ type UsersTableViewProps = {
 }
 
 const STATUS_FILTER_OPTIONS = [
-  { value: "new_user", label: "Not Submitted" },
-  { value: "waiting", label: "Pending Approval" },
-  { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
+  { value: "pending", label: "Pending" },
+  { value: "active", label: "Active" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "expired", label: "Expired" },
 ] as const
 
 function getSubscription(profile: ProfileRow) {
@@ -89,7 +88,7 @@ function getPlanName(profile: ProfileRow, planNameById?: Record<string, string>)
 
 function getStoredPlanId(profile: ProfileRow) {
   const subscription = getSubscription(profile)
-  return subscription?.plan_id ?? subscription?.subscription_plan_id ?? null
+  return subscription?.subscription_plan_id ?? null
 }
 
 function getPlanId(
@@ -114,18 +113,17 @@ function getStatus(profile: ProfileRow) {
 }
 
 function getStatusFormValue(profile: ProfileRow) {
-  return getStatus(profile) ?? "none"
+  return getStatus(profile) ?? "pending"
 }
 
 function getStatusLabel(profile: ProfileRow) {
-  return getAccessStateLabel(getAccessStateFromStatus(getStatus(profile)))
+  return getSubscriptionStatusLabel(getStatus(profile))
 }
 
 function getSince(profile: ProfileRow) {
   const subscription = getSubscription(profile)
   const candidate =
     subscription?.started_at ??
-    subscription?.current_period_start ??
     subscription?.submitted_at ??
     subscription?.created_at ??
     subscription?.updated_at
@@ -135,7 +133,7 @@ function getSince(profile: ProfileRow) {
 
 function getSubscriptionEnd(profile: ProfileRow) {
   const subscription = getSubscription(profile)
-  const candidate = subscription?.ends_at ?? subscription?.current_period_end
+  const candidate = subscription?.ends_at
   return typeof candidate === "string" ? candidate : null
 }
 
@@ -277,7 +275,6 @@ function UserEditDrawer({
               defaultValue={status}
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             >
-              <option value="none">Not Submitted</option>
               {STATUSES.map((item) => (
                 <option key={item} value={item}>
                   {toTitleCase(item)}
@@ -484,7 +481,7 @@ export default function UsersTableView({
 
     return profiles.filter((profile) => {
       const planName = getPlanName(profile, planNameById)
-      const accessState = getAccessStateFromStatus(getStatus(profile))
+      const status = getStatus(profile)
       const email = (profile.email ?? "").toLowerCase()
       const fullName = (profile.full_name ?? "").toLowerCase()
       const profileId = profile.id.toLowerCase()
@@ -495,7 +492,7 @@ export default function UsersTableView({
         email.includes(normalizedSearch) ||
         profileId.includes(normalizedSearch)
       const matchesPlan = planFilter === "all" || planName === planFilter
-      const matchesStatus = statusFilter === "all" || accessState === statusFilter
+      const matchesStatus = statusFilter === "all" || status === statusFilter
 
       return matchesSearch && matchesPlan && matchesStatus
     })
