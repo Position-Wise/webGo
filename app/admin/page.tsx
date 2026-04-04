@@ -1,16 +1,12 @@
 import Link from "next/link"
 import { publishQuickUpdate } from "./actions"
 import {
-  BROADCAST_AUDIENCES,
-  BROADCAST_DURATIONS,
-  BROADCAST_TYPES,
   formatBroadcastDate,
   getBroadcastAuthorName,
-  toAudienceLabel,
-  toBroadcastTypeLabel,
-  toDurationLabel,
+  toBroadcastAudienceLabel,
   toTitleCase,
 } from "./helpers"
+import BroadcastFormFields from "./_components/broadcast-form-fields"
 import { fetchAdminBroadcasts, fetchAdminProfiles } from "./queries"
 import {
   getSubscriptionStatusLabel,
@@ -18,8 +14,8 @@ import {
 } from "@/lib/subscription-status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import LoadingSubmitButton from "@/components/ui/loading-submit-button"
+import { isBroadcastExpired } from "@/lib/broadcast-audience"
 
 export const dynamic = "force-dynamic"
 
@@ -28,6 +24,13 @@ export default async function AdminPage() {
     fetchAdminProfiles(),
     fetchAdminBroadcasts(12),
   ])
+  const userOptions = profiles.map((profile) => ({
+    id: profile.id,
+    label:
+      profile.full_name?.trim() ||
+      profile.email?.trim() ||
+      `User ${profile.id.slice(0, 8)}`,
+  }))
 
   const getProfileStatus = (profile: (typeof profiles)[number]) =>
     normalizeSubscriptionStatus(profile.user_subscriptions?.[0]?.status ?? null)
@@ -69,83 +72,7 @@ export default async function AdminPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <form action={publishQuickUpdate} className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Target audience
-                  </label>
-                  <select
-                    name="audience"
-                    defaultValue="all"
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    {BROADCAST_AUDIENCES.map((audience) => (
-                      <option key={audience} value={audience}>
-                        {toAudienceLabel(audience)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Broadcast type
-                  </label>
-                  <select
-                    name="broadcastType"
-                    defaultValue="investment"
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    {BROADCAST_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {toBroadcastTypeLabel(type)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Title (optional)
-                  </label>
-                  <Input
-                    name="title"
-                    placeholder="Example: Weekly risk update"
-                    maxLength={120}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Display duration
-                  </label>
-                  <select
-                    name="duration"
-                    defaultValue="forever"
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    {BROADCAST_DURATIONS.map((duration) => (
-                      <option key={duration} value={duration}>
-                        {toDurationLabel(duration)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Message
-                </label>
-                <textarea
-                  name="message"
-                  required
-                  rows={4}
-                  maxLength={1000}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                  placeholder="Share quick update for members."
-                />
-              </div>
+              <BroadcastFormFields userOptions={userOptions} />
 
               <LoadingSubmitButton type="submit" size="sm" pendingText="Posting...">
                 Post update
@@ -170,11 +97,17 @@ export default async function AdminPage() {
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {toAudienceLabel(broadcast.audience)}
+                          {toBroadcastAudienceLabel({
+                            audience: broadcast.audience,
+                            audience_type: broadcast.audience_type ?? null,
+                            target_user_ids: broadcast.target_user_ids ?? null,
+                          })}
                         </p>
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground/80">
-                          {toBroadcastTypeLabel(broadcast.broadcast_type ?? null)}
-                        </p>
+                        {broadcast.expires_at && isBroadcastExpired(broadcast.expires_at) ? (
+                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                            Expired
+                          </span>
+                        ) : null}
                         <span className="text-xs text-muted-foreground/70">
                           {formatBroadcastDate(broadcast.created_at)}
                         </span>

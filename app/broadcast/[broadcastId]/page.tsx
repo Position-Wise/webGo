@@ -6,6 +6,10 @@ import {
 } from "@/app/admin/helpers"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { isShareableBroadcastId } from "@/lib/broadcast-share"
+import {
+  isBroadcastExpired,
+  isPrivateBroadcastAudienceType,
+} from "@/lib/broadcast-audience"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
 export const dynamic = "force-dynamic"
@@ -19,6 +23,7 @@ type SharedBroadcast = {
   title: string | null
   message: string
   audience: string | null
+  audience_type: string | null
   broadcast_type: string | null
   created_at: string | null
   expires_at: string | null
@@ -43,17 +48,11 @@ function toSharedBroadcast(row: Record<string, unknown> | null): SharedBroadcast
     title: toNullableString(row.title),
     message,
     audience: toNullableString(row.audience),
+    audience_type: toNullableString(row.audience_type),
     broadcast_type: toNullableString(row.broadcast_type),
     created_at: toNullableString(row.created_at),
     expires_at: toNullableString(row.expires_at),
   }
-}
-
-function isExpired(value: string | null) {
-  if (!value) return false
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return false
-  return parsed.getTime() <= Date.now()
 }
 
 async function fetchShareableBroadcast(
@@ -62,13 +61,14 @@ async function fetchShareableBroadcast(
   const db = await createSupabaseServerClient()
   const { data } = await db
     .from("admin_broadcasts")
-    .select("id,title,message,audience,broadcast_type,created_at,expires_at")
+    .select("id,title,message,audience,audience_type,broadcast_type,created_at,expires_at")
     .eq("id", broadcastId)
     .maybeSingle()
 
   const broadcast = toSharedBroadcast(data as Record<string, unknown> | null)
   if (!broadcast) return null
-  if (isExpired(broadcast.expires_at)) return null
+  if (isPrivateBroadcastAudienceType(broadcast.audience_type)) return null
+  if (isBroadcastExpired(broadcast.expires_at)) return null
   return broadcast
 }
 

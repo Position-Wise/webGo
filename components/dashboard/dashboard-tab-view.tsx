@@ -18,6 +18,14 @@ export type DashboardBroadcast = {
   user_feedback?: "profit" | "loss" | null
 }
 
+export type DashboardSuggestion = {
+  id: string
+  title: string | null
+  message: string
+  posted_by_name?: string | null
+  created_at: string | null
+}
+
 const DASHBOARD_TABS = [
   {
     key: "invest",
@@ -51,6 +59,7 @@ function formatPublishedAt(createdAt: string | null) {
 
 export default function DashboardTabView({
   broadcasts,
+  suggestions,
   allowTrade,
   allowInvestment,
   tradeLimitPerWeek,
@@ -59,6 +68,7 @@ export default function DashboardTabView({
   allowFeedback,
 }: {
   broadcasts: DashboardBroadcast[]
+  suggestions: DashboardSuggestion[]
   allowTrade: boolean
   allowInvestment: boolean
   tradeLimitPerWeek: number
@@ -497,6 +507,49 @@ export default function DashboardTabView({
                 </p>
                 <h3 className="mt-1 text-sm font-semibold">
                   {broadcast.title || "Broadcast"}
+                </h3>
+                <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+                  {broadcast.message}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Posted by {broadcast.posted_by_name || "Admin"}
+                </p>
+              </article>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="space-y-2">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              Private Updates
+            </p>
+            <CardTitle className="mt-2 text-base">
+              Admin Suggestions
+            </CardTitle>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Suggestions sent directly to your account by the admin team.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!suggestions.length ? (
+            <p className="text-sm text-muted-foreground">
+              No admin suggestions for you right now.
+            </p>
+          ) : (
+            suggestions.map((broadcast) => (
+              <article
+                key={broadcast.id}
+                className="rounded-lg border border-border/70 bg-muted/30 p-4"
+              >
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {formatPublishedAt(broadcast.created_at)}
+                </p>
+                <h3 className="mt-1 text-sm font-semibold">
+                  {broadcast.title || "Admin Suggestion"}
                 </h3>
                 <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
                   {broadcast.message}
