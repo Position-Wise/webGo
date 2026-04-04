@@ -11,7 +11,10 @@ type PlanRow = {
   description?: string | null
   is_public?: boolean | null
   price?: number | null
+  plan_type?: string | null
 }
+
+type PlanType = "trader" | "investor" | null
 
 type SubscribePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
@@ -24,6 +27,13 @@ function normalizePlanKey(value: string | null | undefined) {
   if (normalized === "pro" || normalized === "growth") return "pro"
   if (normalized === "premium" || normalized === "elite") return "premium"
   return "basic"
+}
+
+function normalizePlanType(value: string | null | undefined): PlanType {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (normalized === "trader") return "trader"
+  if (normalized === "investor") return "investor"
+  return null
 }
 
 function sortPlans(plans: PlanRow[]) {
@@ -51,7 +61,6 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
   const modeRaw = resolvedSearchParams.mode
   const mode = Array.isArray(modeRaw) ? modeRaw[0] : modeRaw
 
-
   const access = await getCurrentUserAccessState()
 
   if (!access.user) {
@@ -67,7 +76,7 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
   const db = await createSupabaseServerClient()
   const withPriceQuery = await db
     .from("subscription_plans")
-    .select("id,name,description,is_public,price")
+    .select("id,name,description,is_public,price,plan_type")
     .eq("is_public", true)
     .order("name", { ascending: true })
 
@@ -75,7 +84,7 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
     ? (
         await db
           .from("subscription_plans")
-          .select("id,name,description,is_public")
+          .select("id,name,description,is_public,plan_type")
           .order("name", { ascending: true })
       ).data
     : withPriceQuery.data
@@ -92,6 +101,7 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
     name: plan.name ?? "Plan",
     description: plan.description ?? null,
     price: typeof plan.price === "number" ? plan.price : null,
+    planType: normalizePlanType(plan.plan_type),
   }))
 
   const currentPlanId = plans.some((plan) => plan.id === access.planId)

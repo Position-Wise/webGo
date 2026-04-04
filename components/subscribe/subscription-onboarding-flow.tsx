@@ -7,20 +7,16 @@ import SubscribeForm from "@/components/subscribe/subscribe-form";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  CUSTOM_PLAN_OPTION_ID,
-  CUSTOM_PLAN_OPTION_NAME,
-  isCustomPlanOptionId,
-} from "@/lib/inquiries";
 import { cn } from "@/lib/utils";
-import Image from "next/image";
-import paymentQR from "../subscribe/PaymentQR.jpg";
+
+type PlanIntent = "trader" | "investor" | "both" | "custom";
 
 type SubscribePlanOption = {
   id: string;
   name: string;
   description: string | null;
   price: number | null;
+  planType: "trader" | "investor" | null;
 };
 
 type FlowMode = "new" | "edit";
@@ -39,29 +35,97 @@ type SubscriptionOnboardingFlowProps = {
   currentProofUrl: string | null;
   lastSubmittedAt: string | null;
   paymentQrUrl: string | null;
+  paymentQrDownloadUrl: string | null;
 };
 
-const NEW_FLOW_STEPS = [
-  "Welcome",
-  "Requirements",
-  "Plan",
-  "Payment",
-  "Proof",
-  "Relax",
-] as const;
-const CUSTOM_FLOW_STEPS = [
-  "Welcome",
-  "Requirements",
-  "Plan",
-  "Custom Request",
-] as const;
-const EDIT_FLOW_STEPS = [
-  "Welcome",
-  "Change Plan",
-  "Repayment",
-  "Proof",
-  "Relax",
-] as const;
+type PaymentQrPanelProps = {
+  amountLabel?: string | null;
+  description: string;
+  paymentQrDownloadUrl: string | null;
+  paymentQrUrl: string | null;
+};
+
+const WELCOME_STEP = "Welcome";
+const REQUIREMENTS_STEP = "Requirements";
+const INTENT_STEP = "Intent";
+const PLAN_STEP = "Plan";
+const PAYMENT_STEP = "Payment";
+const PROOF_STEP = "Proof";
+const RELAX_STEP = "Relax";
+const CHANGE_PLAN_STEP = "Change Plan";
+const REPAYMENT_STEP = "Repayment";
+const CUSTOM_REQUEST_STEP = "Custom Request";
+
+const PAYMENT_QR_EMPTY_STATE =
+  "Payment QR is not available in the paymentQR storage bucket yet. Please ask admin to upload PaymentQR.";
+
+type FlowStep =
+  | typeof WELCOME_STEP
+  | typeof REQUIREMENTS_STEP
+  | typeof INTENT_STEP
+  | typeof PLAN_STEP
+  | typeof PAYMENT_STEP
+  | typeof PROOF_STEP
+  | typeof RELAX_STEP
+  | typeof CHANGE_PLAN_STEP
+  | typeof REPAYMENT_STEP
+  | typeof CUSTOM_REQUEST_STEP;
+
+const NEW_FLOW_STEPS: readonly FlowStep[] = [
+  WELCOME_STEP,
+  REQUIREMENTS_STEP,
+  INTENT_STEP,
+  PLAN_STEP,
+  PAYMENT_STEP,
+  PROOF_STEP,
+  RELAX_STEP,
+];
+const NEW_CUSTOM_FLOW_STEPS: readonly FlowStep[] = [
+  WELCOME_STEP,
+  REQUIREMENTS_STEP,
+  INTENT_STEP,
+  CUSTOM_REQUEST_STEP,
+];
+const EDIT_FLOW_STEPS: readonly FlowStep[] = [
+  WELCOME_STEP,
+  INTENT_STEP,
+  CHANGE_PLAN_STEP,
+  REPAYMENT_STEP,
+  PROOF_STEP,
+  RELAX_STEP,
+];
+const EDIT_CUSTOM_FLOW_STEPS: readonly FlowStep[] = [
+  WELCOME_STEP,
+  INTENT_STEP,
+  CUSTOM_REQUEST_STEP,
+];
+
+const INTENT_OPTIONS: {
+  value: PlanIntent;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "trader",
+    label: "Trader",
+    description: "Show trading-focused plans and active market access.",
+  },
+  {
+    value: "investor",
+    label: "Investor",
+    description: "Show investment-focused plans and longer-term support.",
+  },
+  {
+    value: "both",
+    label: "Both",
+    description: "Show every public plan so you can compare everything.",
+  },
+  {
+    value: "custom",
+    label: "Custom",
+    description: "Skip plan selection and send admin a tailored inquiry.",
+  },
+];
 
 function normalizePlanKey(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase();
@@ -88,6 +152,69 @@ function formatAmount(plan: SubscribePlanOption | null) {
   return getFallbackPriceLabel(plan.name);
 }
 
+function getStepIndex(steps: readonly FlowStep[], step: FlowStep) {
+  return steps.indexOf(step);
+}
+
+function getEmptyPlanMessage(intent: PlanIntent | undefined) {
+  if (intent === "trader") return "No public trader plans are configured yet.";
+  if (intent === "investor") {
+    return "No public investor plans are configured yet.";
+  }
+  return "No public plans are configured yet.";
+}
+
+function PaymentQrPanel({
+  amountLabel = null,
+  description,
+  paymentQrDownloadUrl,
+  paymentQrUrl,
+}: PaymentQrPanelProps) {
+  const downloadHref = paymentQrDownloadUrl ?? paymentQrUrl;
+
+  return (
+    <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-foreground">Pay using this QR code</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+
+      {paymentQrUrl ? (
+        <>
+          <div className="rounded-md border border-border/70 bg-background p-3">
+            <img
+              src={paymentQrUrl}
+              alt="Payment QR"
+              className="mx-auto w-full max-w-xs rounded-md"
+            />
+          </div>
+
+          {downloadHref ? (
+            <div className="flex justify-center">
+              <Button asChild size="sm" variant="outline">
+                <a href={downloadHref} rel="noreferrer">
+                  Download QR image
+                </a>
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+          {PAYMENT_QR_EMPTY_STATE}
+        </div>
+      )}
+
+      {amountLabel ? (
+        <div className="rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+          <p className="text-muted-foreground">Paying amount</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{amountLabel}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function SubscriptionOnboardingFlow({
   mode,
   userId,
@@ -102,76 +229,81 @@ export default function SubscriptionOnboardingFlow({
   currentProofUrl,
   lastSubmittedAt,
   paymentQrUrl,
+  paymentQrDownloadUrl,
 }: SubscriptionOnboardingFlowProps) {
   const waitingState = accessState === "waiting";
   const isEditMode = mode === "edit" || isBlocked;
+  const [intent, setIntent] = useState<PlanIntent>();
   const [selectedPlanId, setSelectedPlanId] = useState(() => {
-    if (initialPlanId) return initialPlanId;
-    if (plans[0]?.id) return plans[0].id;
-    return isEditMode ? "" : CUSTOM_PLAN_OPTION_ID;
+    if (initialPlanId && plans.some((plan) => plan.id === initialPlanId)) {
+      return initialPlanId;
+    }
+    return plans[0]?.id ?? "";
   });
   const [stepIndex, setStepIndex] = useState(() => {
     return waitingState && !isEditMode ? NEW_FLOW_STEPS.length - 1 : 0;
   });
   const [willRepay, setWillRepay] = useState(false);
 
-  const availablePlans = useMemo(() => {
-    if (isEditMode) return plans;
-    if (plans.some((plan) => isCustomPlanOptionId(plan.id))) return plans;
+  const filteredPlans = useMemo(() => {
+    if (intent === "trader") {
+      return plans.filter((plan) => plan.planType === "trader");
+    }
 
-    return [
-      ...plans,
-      {
-        id: CUSTOM_PLAN_OPTION_ID,
-        name: CUSTOM_PLAN_OPTION_NAME,
-        description: "Tell admin what you need and request a tailored plan.",
-        price: null,
-      },
-    ];
-  }, [isEditMode, plans]);
+    if (intent === "investor") {
+      return plans.filter((plan) => plan.planType === "investor");
+    }
+
+    return plans;
+  }, [intent, plans]);
+
+  const isCustomIntent = intent === "custom";
+  const steps = isEditMode
+    ? isCustomIntent
+      ? EDIT_CUSTOM_FLOW_STEPS
+      : EDIT_FLOW_STEPS
+    : isCustomIntent
+      ? NEW_CUSTOM_FLOW_STEPS
+      : NEW_FLOW_STEPS;
+  const effectiveStepIndex = Math.min(stepIndex, steps.length - 1);
+
+  const planStepLabel = isEditMode ? CHANGE_PLAN_STEP : PLAN_STEP;
+  const paymentStepLabel = isEditMode ? REPAYMENT_STEP : PAYMENT_STEP;
+  const intentStepIndex = getStepIndex(steps, INTENT_STEP);
+  const planStepIndex = getStepIndex(steps, planStepLabel);
+  const paymentStepIndex = getStepIndex(steps, paymentStepLabel);
+  const customRequestStepIndex = getStepIndex(steps, CUSTOM_REQUEST_STEP);
+  const proofStepIndex = getStepIndex(steps, PROOF_STEP);
+  const submitStepIndex =
+    customRequestStepIndex >= 0 ? customRequestStepIndex : proofStepIndex;
+  const lastStepIndex = steps.length - 1;
+  const hasLocalSuccessStep = lastStepIndex > submitStepIndex;
 
   const effectiveSelectedPlanId = useMemo(() => {
     if (
       selectedPlanId &&
-      availablePlans.some((plan) => plan.id === selectedPlanId)
+      filteredPlans.some((plan) => plan.id === selectedPlanId)
     ) {
       return selectedPlanId;
     }
 
-    return availablePlans[0]?.id ?? "";
-  }, [availablePlans, selectedPlanId]);
-
-  const isCustomPlanSelected =
-    !isEditMode && isCustomPlanOptionId(effectiveSelectedPlanId);
-  const steps = isEditMode
-    ? EDIT_FLOW_STEPS
-    : isCustomPlanSelected
-      ? CUSTOM_FLOW_STEPS
-      : NEW_FLOW_STEPS;
-  const effectiveStepIndex = Math.min(stepIndex, steps.length - 1);
+    return filteredPlans[0]?.id ?? "";
+  }, [filteredPlans, selectedPlanId]);
 
   const selectedPlan = useMemo(() => {
     return (
-      availablePlans.find((plan) => plan.id === effectiveSelectedPlanId) ?? null
+      filteredPlans.find((plan) => plan.id === effectiveSelectedPlanId) ?? null
     );
-  }, [availablePlans, effectiveSelectedPlanId]);
+  }, [filteredPlans, effectiveSelectedPlanId]);
 
   const amountLabel = formatAmount(selectedPlan);
   const progressValue = Math.round(
     ((effectiveStepIndex + 1) / steps.length) * 100,
   );
 
-  const planStepIndex = isEditMode ? 1 : 2;
-  const paymentStepIndex = !isEditMode && !isCustomPlanSelected ? 3 : -1;
-  const customRequestStepIndex = !isEditMode && isCustomPlanSelected ? 3 : -1;
-  const proofStepIndex = isEditMode ? 3 : !isCustomPlanSelected ? 4 : -1;
-  const submitStepIndex =
-    customRequestStepIndex >= 0 ? customRequestStepIndex : proofStepIndex;
-  const lastStepIndex = steps.length - 1;
-  const hasLocalSuccessStep = lastStepIndex > submitStepIndex;
-
   const canGoNext =
     effectiveStepIndex < submitStepIndex &&
+    !(effectiveStepIndex === intentStepIndex && !intent) &&
     !(effectiveStepIndex === planStepIndex && !effectiveSelectedPlanId);
 
   function goNext() {
@@ -198,9 +330,9 @@ export default function SubscriptionOnboardingFlow({
         </h1>
         <p className="text-sm text-muted-foreground">
           {isBlocked
-            ? "Your previous access is no longer active. Re-submit your plan and payment details to return to admin review."
+            ? "Choose the path that fits you, then re-submit your details or send a custom request for admin review."
             : isEditMode
-              ? "Follow this update flow to edit plan or proof details safely."
+              ? "Follow this update flow to safely revise your membership path, plan, or proof details."
               : "Complete each step once and unlock broadcast access after admin approval."}
         </p>
       </div>
@@ -256,8 +388,9 @@ export default function SubscriptionOnboardingFlow({
         <CardContent className="space-y-5">
           {isBlocked ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              Your access is currently blocked. Please re-submit your plan and
-              payment details to restore access.
+              Your access is currently blocked. Choose a matching plan with
+              proof, or send a custom request, so admin can review your next
+              step.
             </div>
           ) : null}
 
@@ -284,22 +417,29 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {!isEditMode && effectiveStepIndex === 1 ? (
+          {!isEditMode &&
+          effectiveStepIndex === getStepIndex(steps, REQUIREMENTS_STEP) ? (
             <div className="rounded-lg border border-border/70 bg-muted/20 p-5 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">
                 To unlock your access, complete these actions:
               </p>
               <ul className="mt-3 space-y-2">
-                <li>1. Choose your preferred membership plan.</li>
                 <li>
-                  2. Pay the exact amount using the payment QR code, or choose
-                  Custom for a tailored request.
+                  1. Choose what you are looking for so we can guide you to the
+                  right plan path.
                 </li>
                 <li>
-                  3. Upload a clear payment screenshot, or send admin your
-                  custom-plan details.
+                  2. Pick a matching membership plan, or choose Custom if you
+                  need something tailored.
                 </li>
-                <li>4. Submit and wait for admin verification or follow-up.</li>
+                <li>
+                  3. For standard plans, pay the exact amount using the payment
+                  QR code and keep a clear screenshot ready.
+                </li>
+                <li>
+                  4. Submit your proof or custom request and wait for admin
+                  verification or follow-up.
+                </li>
               </ul>
               <p className="mt-3">
                 After approval, your dashboard broadcasts and member tools will
@@ -358,15 +498,56 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {effectiveStepIndex === planStepIndex ? (
+          {effectiveStepIndex === intentStepIndex ? (
+            <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  What are you looking for?
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  We will tailor the next step based on your intent without
+                  changing any backend subscription logic.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {INTENT_OPTIONS.map((option) => {
+                  const isSelected = intent === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => setIntent(option.value)}
+                      className={cn(
+                        "rounded-lg border p-4 text-left transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary/5"
+                          : "border-border/70 bg-background hover:border-border",
+                      )}
+                    >
+                      <p className="text-base font-semibold text-foreground">
+                        {option.label}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {option.description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {planStepIndex >= 0 && effectiveStepIndex === planStepIndex ? (
             <div className="space-y-3">
-              {!availablePlans.length ? (
+              {!filteredPlans.length ? (
                 <div className="rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  No public plans are configured yet. Ask admin to configure
-                  plans.
+                  {getEmptyPlanMessage(intent)} Ask admin to configure plans.
                 </div>
               ) : (
-                availablePlans.map((plan) => {
+                filteredPlans.map((plan) => {
                   const isSelected = plan.id === effectiveSelectedPlanId;
 
                   return (
@@ -399,43 +580,13 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {paymentStepIndex >= 0 && effectiveStepIndex === paymentStepIndex ? (
-            <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
-              <p className="text-sm font-medium text-foreground">
-                Pay using this QR code
-              </p>
-
-              {paymentQrUrl ? (
-                <div className="rounded-md border border-border/70 bg-background p-3">
-                  {selectedPlan?.price === 299 ? (
-                    <Image
-                      src={paymentQR}
-                      alt="Payment QR"
-                      className="mx-auto w-full max-w-xs rounded-md"
-                      width={400}
-                      height={400}
-                    />
-                  ) : (
-                    <img
-                      src={paymentQrUrl}
-                      alt="Payment QR"
-                      className="mx-auto w-full max-w-xs rounded-md"
-                    />
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                  Payment QR is not configured yet. Please ask admin to add it.
-                </div>
-              )}
-
-              <div className="rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                <p className="text-muted-foreground">Paying amount</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">
-                  {amountLabel}
-                </p>
-              </div>
-            </div>
+          {!isEditMode && effectiveStepIndex === paymentStepIndex ? (
+            <PaymentQrPanel
+              amountLabel={amountLabel}
+              description="Scan this QR code to complete your payment. You can download the same image if you want to open it on another device."
+              paymentQrDownloadUrl={paymentQrDownloadUrl}
+              paymentQrUrl={paymentQrUrl}
+            />
           ) : null}
 
           {customRequestStepIndex >= 0 &&
@@ -455,7 +606,7 @@ export default function SubscriptionOnboardingFlow({
             </div>
           ) : null}
 
-          {isEditMode && effectiveStepIndex === 2 ? (
+          {isEditMode && effectiveStepIndex === paymentStepIndex ? (
             <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
               <p className="text-sm font-medium text-foreground">
                 Re-payment is optional
@@ -489,6 +640,13 @@ export default function SubscriptionOnboardingFlow({
                   ? "I will upload a new payment proof."
                   : "I will reuse current proof."}
               </p>
+
+              <PaymentQrPanel
+                amountLabel={selectedPlan ? amountLabel : null}
+                description="If you plan to make a fresh payment, use this same QR code. You can also download it before uploading your new proof."
+                paymentQrDownloadUrl={paymentQrDownloadUrl}
+                paymentQrUrl={paymentQrUrl}
+              />
             </div>
           ) : null}
 
@@ -506,13 +664,11 @@ export default function SubscriptionOnboardingFlow({
               {selectedPlan ? (
                 <SubscribeForm
                   userId={userId}
-                  plans={availablePlans
-                    .filter((plan) => !isCustomPlanOptionId(plan.id))
-                    .map((plan) => ({
-                      id: plan.id,
-                      name: plan.name,
-                      description: plan.description,
-                    }))}
+                  plans={filteredPlans.map((plan) => ({
+                    id: plan.id,
+                    name: plan.name,
+                    description: plan.description,
+                  }))}
                   initialPlanId={selectedPlan.id}
                   lockedPlanId={selectedPlan.id}
                   hidePlanSelector
