@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation"
+﻿import { redirect } from "next/navigation"
 import SubscriptionOnboardingFlow from "@/components/subscribe/subscription-onboarding-flow"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
@@ -123,7 +123,11 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
     access.user.user_metadata?.picture ||
     null
 
-  const paymentQrUrl = process.env.NEXT_PUBLIC_PAYMENT_QR_URL ?? null
+  const { data: paymentQrData } = db.storage
+    .from("PaymentQR")
+    .getPublicUrl("PaymentQR.jpg")
+  const paymentQrUrl = paymentQrData?.publicUrl ?? ""
+  const paymentQrDownloadUrl = paymentQrUrl
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
@@ -140,6 +144,7 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
         currentPlanLabel={currentPlanLabel}
         currentProofUrl={access.subscription?.payment_proof ?? null}
         lastSubmittedAt={formatDate(access.subscription?.submitted_at ?? null)}
+        paymentQrDownloadUrl={paymentQrDownloadUrl}
         paymentQrUrl={paymentQrUrl}
       />
     </main>
