@@ -232,12 +232,13 @@ export async function fetchAdminPlanSettings() {
 
 export async function fetchAdminBroadcasts(limit = 20) {
   const supabase = await createSupabaseServerClient()
-  const nowIso = new Date().toISOString()
   const broadcastSelect = `
       id,
       title,
       message,
       audience,
+      audience_type,
+      target_user_ids,
       broadcast_type,
       created_by,
       duration,
@@ -251,7 +252,6 @@ export async function fetchAdminBroadcasts(limit = 20) {
   const { data, error } = await supabase
     .from("admin_broadcasts")
     .select(broadcastSelect)
-    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("created_at", { ascending: false })
     .limit(limit)
 
@@ -264,6 +264,8 @@ export async function fetchAdminBroadcasts(limit = 20) {
           title,
           message,
           audience,
+          audience_type,
+          target_user_ids,
           broadcast_type,
           created_by,
           duration,
@@ -277,10 +279,7 @@ export async function fetchAdminBroadcasts(limit = 20) {
     return (fallbackRows as BroadcastRow[] | null) ?? []
   }
 
-  return ((data as BroadcastRow[] | null) ?? []).filter((row) => {
-    if (!row.expires_at) return true
-    return row.expires_at > nowIso
-  })
+  return (data as BroadcastRow[] | null) ?? []
 }
 
 export async function fetchAdminInquiries() {

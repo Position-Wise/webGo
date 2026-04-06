@@ -1,3 +1,10 @@
+import {
+  BROADCAST_AUDIENCE_TYPES,
+  BROADCAST_EXPIRY_OPTIONS,
+  normalizeBroadcastAudienceType,
+  normalizeTargetUserIds,
+} from "@/lib/broadcast-audience"
+
 export const ROLES = [
   "customer",
   "trader",
@@ -15,8 +22,9 @@ export const BROADCAST_AUDIENCES = [
   "premium",
   "admin",
 ] as const
-export const BROADCAST_DURATIONS = ["24h", "week", "month", "forever"] as const
+export const BROADCAST_DURATIONS = ["24h", "week", "month", "year", "forever"] as const
 export const BROADCAST_TYPES = ["trade", "investment", "announcement"] as const
+export { BROADCAST_AUDIENCE_TYPES, BROADCAST_EXPIRY_OPTIONS }
 
 export function toAudienceLabel(audience: string | null) {
   const key = (audience ?? "all").toLowerCase()
@@ -26,6 +34,33 @@ export function toAudienceLabel(audience: string | null) {
   if (key === "pro" || key === "growth") return "Pro Members"
   if (key === "premium" || key === "elite") return "Premium Members"
   return "All Members"
+}
+
+export function toAudienceTypeLabel(audienceType: string | null) {
+  const normalized = normalizeBroadcastAudienceType(audienceType)
+
+  if (normalized === "trader") return "Trader"
+  if (normalized === "investor") return "Investor"
+  if (normalized === "users") return "Specific Users"
+  return "Audience Type"
+}
+
+export function toBroadcastAudienceLabel(params: {
+  audience: string | null
+  audience_type?: string | null
+  target_user_ids?: string[] | null
+}) {
+  const audienceType = normalizeBroadcastAudienceType(params.audience_type)
+  if (audienceType === "users") {
+    const targetCount = normalizeTargetUserIds(params.target_user_ids).length
+    return targetCount > 0 ? `Specific Users (${targetCount})` : "Specific Users"
+  }
+
+  if (audienceType) {
+    return toAudienceTypeLabel(audienceType)
+  }
+
+  return toAudienceLabel(params.audience)
 }
 
 export function formatBroadcastDate(value: string | null) {
@@ -53,7 +88,17 @@ export function toDurationLabel(duration: string | null) {
   if (normalized === "24h") return "24 Hours"
   if (normalized === "week") return "1 Week"
   if (normalized === "month") return "1 Month"
+  if (normalized === "year") return "1 Year"
   return "Forever"
+}
+
+export function toExpiryOptionLabel(option: string | null) {
+  const normalized = (option ?? "none").toLowerCase()
+  if (normalized === "24h") return "24 Hours"
+  if (normalized === "1w") return "1 Week"
+  if (normalized === "1m") return "1 Month"
+  if (normalized === "1y") return "1 Year"
+  return "No Expiry"
 }
 
 export function toBroadcastTypeLabel(type: string | null) {

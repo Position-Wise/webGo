@@ -39,6 +39,8 @@ export type BroadcastRow = {
   title: string | null
   message: string
   audience: string | null
+  audience_type?: string | null
+  target_user_ids?: string[] | null
   broadcast_type?: string | null
   created_by?: string | null
   duration?: string | null

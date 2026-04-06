@@ -4,14 +4,9 @@ import { useRouter } from "next/navigation"
 import { type FormEvent, useState, useTransition } from "react"
 import { Trash2 } from "lucide-react"
 import { deleteBroadcast, updateBroadcast } from "../actions"
-import {
-  BROADCAST_AUDIENCES,
-  BROADCAST_DURATIONS,
-  BROADCAST_TYPES,
-  toAudienceLabel,
-  toBroadcastTypeLabel,
-  toDurationLabel,
-} from "../helpers"
+import BroadcastFormFields, {
+  type BroadcastUserOption,
+} from "../_components/broadcast-form-fields"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,29 +17,49 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+import {
+  isPrivateBroadcastAudienceType,
+  requiresBroadcastAudienceTypeConversion,
+  resolveBroadcastAudienceTypeForEditor,
+} from "@/lib/broadcast-audience"
 
 type BroadcastCardActionsProps = {
   broadcast: {
     id: string
     audience: string | null
+    audience_type: string | null
+    target_user_ids: string[] | null
     broadcast_type: string | null
     duration: string | null
+    expiry_option: string | null
     title: string | null
     message: string
   }
+  userOptions: BroadcastUserOption[]
 }
 
-export default function BroadcastCardActions({ broadcast }: BroadcastCardActionsProps) {
+export default function BroadcastCardActions({
+  broadcast,
+  userOptions,
+}: BroadcastCardActionsProps) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const [isSharing, setIsSharing] = useState(false)
   const [shareLabel, setShareLabel] = useState("Share")
   const [isUpdating, startUpdateTransition] = useTransition()
   const [isDeleting, startDeleteTransition] = useTransition()
+  const initialAudienceType = resolveBroadcastAudienceTypeForEditor({
+    audienceType: broadcast.audience_type,
+    audience: broadcast.audience,
+  })
+  const showConversionNotice = requiresBroadcastAudienceTypeConversion({
+    audienceType: broadcast.audience_type,
+    audience: broadcast.audience,
+  })
+  const isPrivateBroadcast = isPrivateBroadcastAudienceType(broadcast.audience_type)
 
   async function handleShare() {
-    if (isSharing) return
+    if (isSharing || isPrivateBroadcast) return
 
     setIsSharing(true)
     setShareLabel("Preparing...")
@@ -112,10 +127,10 @@ export default function BroadcastCardActions({ broadcast }: BroadcastCardActions
         type="button"
         variant="outline"
         size="sm"
-        disabled={isSharing || isUpdating || isDeleting}
+        disabled={isPrivateBroadcast || isSharing || isUpdating || isDeleting}
         onClick={() => void handleShare()}
       >
-        {isSharing ? "Sharing..." : shareLabel}
+        {isPrivateBroadcast ? "Private" : isSharing ? "Sharing..." : shareLabel}
       </Button>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -128,90 +143,21 @@ export default function BroadcastCardActions({ broadcast }: BroadcastCardActions
           <DialogHeader>
             <DialogTitle>Edit Broadcast</DialogTitle>
             <DialogDescription>
-              Update audience, message type, duration, and content.
+              Update targeting, expiry, and content without breaking legacy display.
             </DialogDescription>
           </DialogHeader>
 
           <form className="space-y-3" onSubmit={handleEditSubmit}>
             <input type="hidden" name="broadcastId" value={broadcast.id} />
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Target audience
-                </label>
-                <select
-                  name="audience"
-                  defaultValue={broadcast.audience ?? "all"}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  {BROADCAST_AUDIENCES.map((audience) => (
-                    <option key={audience} value={audience}>
-                      {toAudienceLabel(audience)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Broadcast type
-                </label>
-                <select
-                  name="broadcastType"
-                  defaultValue={broadcast.broadcast_type ?? "investment"}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  {BROADCAST_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {toBroadcastTypeLabel(type)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Display duration
-                </label>
-                <select
-                  name="duration"
-                  defaultValue={broadcast.duration ?? "forever"}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  {BROADCAST_DURATIONS.map((duration) => (
-                    <option key={duration} value={duration}>
-                      {toDurationLabel(duration)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                Title (optional)
-              </label>
-              <Input
-                name="title"
-                defaultValue={broadcast.title ?? ""}
-                maxLength={120}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">
-                Message
-              </label>
-              <textarea
-                name="message"
-                required
-                rows={5}
-                defaultValue={broadcast.message}
-                maxLength={1000}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              />
-            </div>
+            <BroadcastFormFields
+              userOptions={userOptions}
+              initialTitle={broadcast.title}
+              initialMessage={broadcast.message}
+              initialAudienceType={initialAudienceType}
+              initialTargetUserIds={broadcast.target_user_ids}
+              initialExpiryOption={broadcast.expiry_option}
+              showConversionNotice={showConversionNotice}
+            />
 
             <DialogFooter showCloseButton>
               <Button type="submit" size="sm" disabled={isUpdating || isDeleting}>

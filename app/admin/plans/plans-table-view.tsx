@@ -24,13 +24,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { log } from "console";
 
 type PlansTableViewProps = {
   plans: SubscriptionPlanRow[];
 };
 
-function getPlanName(plan: SubscriptionPlanRow) {
+export function getPlanName(plan: SubscriptionPlanRow) {
   const normalized = (plan.name ?? "").trim().toLowerCase();
   if (normalized === "growth") return "pro";
   if (normalized === "elite") return "premium";
@@ -45,7 +44,7 @@ function isSystemPlan(plan: SubscriptionPlanRow) {
   return name === "new" || name === "admin";
 }
 
-function getDescription(plan: SubscriptionPlanRow) {
+export function getDescription(plan: SubscriptionPlanRow) {
   const fromDb = (plan.description ?? "").trim();
   if (fromDb) return fromDb;
 
@@ -58,18 +57,18 @@ function getDescription(plan: SubscriptionPlanRow) {
   return "Custom plan";
 }
 
-function getAllowTrade(plan: SubscriptionPlanRow) {
+export function getAllowTrade(plan: SubscriptionPlanRow) {
   if (typeof plan.allow_trade === "boolean") return plan.allow_trade;
   const name = getPlanName(plan);
   return name === "pro" || name === "premium" || name === "admin";
 }
 
-function getAllowInvestment(plan: SubscriptionPlanRow) {
+export function getAllowInvestment(plan: SubscriptionPlanRow) {
   if (typeof plan.allow_investment === "boolean") return plan.allow_investment;
   return getPlanName(plan) !== "new";
 }
 
-function getTradeLimit(plan: SubscriptionPlanRow) {
+export function getTradeLimit(plan: SubscriptionPlanRow) {
   if (typeof plan.trade_limit_per_week === "number") {
     return Math.max(0, Math.floor(plan.trade_limit_per_week));
   }
@@ -81,7 +80,7 @@ function getTradeLimit(plan: SubscriptionPlanRow) {
   return 0;
 }
 
-function getVisibilityLabel(plan: SubscriptionPlanRow) {
+export function getVisibilityLabel(plan: SubscriptionPlanRow) {
   return isSystemPlan(plan) ? "System" : "Public";
 }
 

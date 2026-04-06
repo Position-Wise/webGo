@@ -2,15 +2,17 @@ import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { getBroadcastAuthorName } from "@/app/admin/helpers"
 import DashboardTabView, {
   type DashboardBroadcast,
+  type DashboardSuggestion,
 } from "@/components/dashboard/dashboard-tab-view"
 import AskAdminDialog from "@/components/inquiries/ask-admin-dialog"
 import LiveMarketBoard from "@/components/dashboard/live-market-board"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import { getAccessStateLabel } from "@/lib/subscription-status"
 import {
+  isBroadcastExpired,
   normalizeBroadcastType,
   normalizePlanAudienceKey,
-  resolveMemberBroadcastTab,
+  resolveDashboardBroadcastPlacement,
 } from "@/lib/broadcast-audience"
 
 export const dynamic = "force-dynamic"
@@ -28,6 +30,8 @@ type BroadcastRow = {
   title: string | null
   message: string
   audience: string | null
+  audience_type?: string | null
+  target_user_ids?: string[] | null
   broadcast_type?: string | null
   created_by?: string | null
   profiles?:
@@ -134,12 +138,13 @@ export default async function DashboardPage() {
   const allowInvestment = isApprovedAccess ? baseAllowInvestment : false
   const tradeLimitPerWeek = allowTrade ? planTradeLimit : 0
 
-  const nowIso = new Date().toISOString()
   const broadcastSelect = `
       id,
       title,
       message,
       audience,
+      audience_type,
+      target_user_ids,
       broadcast_type,
       created_by,
       expires_at,
@@ -151,7 +156,6 @@ export default async function DashboardPage() {
   const { data: broadcastRowsWithMeta, error: broadcastRowsWithMetaError } = await supabase
     .from("admin_broadcasts")
     .select(broadcastSelect)
-    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("created_at", { ascending: false })
     .limit(60)
 
@@ -165,6 +169,8 @@ export default async function DashboardPage() {
             title,
             message,
             audience,
+            audience_type,
+            target_user_ids,
             broadcast_type,
             expires_at,
             created_at
@@ -175,37 +181,48 @@ export default async function DashboardPage() {
     ).data
     : broadcastRowsWithMeta
 
-  const broadcasts = ((broadcastRows as BroadcastRow[] | null) ?? []).reduce<
-    DashboardBroadcast[]
-  >((acc, row) => {
-      if (!row.message) return acc
-      if (row.expires_at && row.expires_at <= nowIso) return acc
+  const broadcasts: DashboardBroadcast[] = []
+  const suggestions: DashboardSuggestion[] = []
 
-      const dashboardTab = resolveMemberBroadcastTab({
-        audience: row.audience,
-        broadcastType: row.broadcast_type,
-        isAdmin: access.isAdmin,
-        planName: normalizedPlan,
-        allowTrade,
-        allowInvestment,
-      })
+  for (const row of (broadcastRows as BroadcastRow[] | null) ?? []) {
+    if (!row.message) continue
+    if (!access.isAdmin && isBroadcastExpired(row.expires_at)) continue
 
-      if (!dashboardTab) return acc
+    const placement = resolveDashboardBroadcastPlacement({
+      audience: row.audience,
+      audienceType: row.audience_type,
+      targetUserIds: row.target_user_ids,
+      broadcastType: row.broadcast_type,
+      isAdmin: access.isAdmin,
+      planName: normalizedPlan,
+      allowTrade,
+      allowInvestment,
+      userId: user.id,
+    })
 
-      acc.push({
-        id: row.id,
-        title: row.title,
-        message: row.message,
-        audience: row.audience,
-        broadcast_type: normalizeBroadcastType(row.broadcast_type),
-        dashboard_tab: dashboardTab,
-        posted_by_name: getBroadcastAuthorName(row.profiles),
-        created_at: row.created_at,
-        user_feedback: null,
-      })
+    if (!placement) continue
 
-      return acc
-    }, [])
+    const baseBroadcast = {
+      id: row.id,
+      title: row.title,
+      message: row.message,
+      posted_by_name: getBroadcastAuthorName(row.profiles),
+      created_at: row.created_at,
+    }
+
+    if (placement.kind === "suggestion") {
+      suggestions.push(baseBroadcast)
+      continue
+    }
+
+    broadcasts.push({
+      ...baseBroadcast,
+      audience: row.audience,
+      broadcast_type: normalizeBroadcastType(row.broadcast_type),
+      dashboard_tab: placement.tab,
+      user_feedback: null,
+    })
+  }
 
   const broadcastIds = broadcasts.map((broadcast) => broadcast.id)
   const feedbackByBroadcast: Record<string, "profit" | "loss"> = {}
@@ -322,6 +339,7 @@ export default async function DashboardPage() {
         <div>
           <DashboardTabView
             broadcasts={broadcastsWithFeedback}
+            suggestions={suggestions}
             allowTrade={allowTrade}
             allowInvestment={allowInvestment}
             tradeLimitPerWeek={tradeLimitPerWeek}

@@ -2,6 +2,14 @@
 
 import { revalidatePath } from "next/cache"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import {
+  calculateBroadcastExpiration,
+  normalizeBroadcastAudienceType,
+  normalizeBroadcastExpiryOption,
+  normalizeTargetUserIds,
+  resolveLegacyBroadcastFieldsFromAudienceType,
+  resolveLegacyDurationFromExpiryOption,
+} from "@/lib/broadcast-audience"
 import { isAdminRole } from "@/lib/roles"
 import {
   BROADCAST_AUDIENCES,
@@ -46,30 +54,14 @@ function normalizeDuration(value: string | null) {
   return "forever"
 }
 
-function normalizeBroadcastType(value: string | null) {
+function normalizeBroadcastType(
+  value: string | null
+): "trade" | "investment" | "announcement" {
   const normalized = (value ?? "").trim().toLowerCase()
   if (BROADCAST_TYPES.includes(normalized as (typeof BROADCAST_TYPES)[number])) {
-    return normalized
+    return normalized as "trade" | "investment" | "announcement"
   }
   return "investment"
-}
-
-function calculateExpiration(duration: string) {
-  const now = new Date()
-
-  switch (duration) {
-    case "24h":
-      now.setHours(now.getHours() + 24)
-      return now
-    case "week":
-      now.setDate(now.getDate() + 7)
-      return now
-    case "month":
-      now.setMonth(now.getMonth() + 1)
-      return now
-    default:
-      return null
-  }
 }
 
 async function getCallerAccess() {
@@ -158,6 +150,93 @@ function normalizeSortOrder(value: string | null) {
   const parsed = Number((value ?? "").trim())
   if (!Number.isFinite(parsed)) return 0
   return Math.max(0, Math.floor(parsed))
+}
+
+type ResolvedBroadcastInput = {
+  title: string | null
+  message: string
+  audienceType: "trader" | "investor" | "users" | null
+  targetUserIds: string[] | null
+  audience: string
+  broadcastType: "trade" | "investment" | "announcement"
+  duration: string
+  expiresAt: string | null
+}
+
+function resolveBroadcastInput(formData: FormData): ResolvedBroadcastInput | null {
+  const title = (formData.get("title") as string | null)?.trim() ?? ""
+  const message = (formData.get("message") as string | null)?.trim() ?? ""
+
+  if (!message) {
+    return null
+  }
+
+  const rawAudienceType = formData.get("audienceType") as string | null
+  const hasNewTargetingFields =
+    rawAudienceType !== null ||
+    formData.has("expiryOption") ||
+    formData.getAll("targetUserIds").length > 0
+
+  if (hasNewTargetingFields) {
+    const audienceType = normalizeBroadcastAudienceType(rawAudienceType)
+    if (!audienceType) {
+      return null
+    }
+
+    const legacyFields = resolveLegacyBroadcastFieldsFromAudienceType(audienceType)
+    if (!legacyFields) {
+      return null
+    }
+
+    const expiryOption =
+      normalizeBroadcastExpiryOption(formData.get("expiryOption") as string | null) ?? "none"
+    const targetUserIds =
+      audienceType === "users"
+        ? normalizeTargetUserIds(formData.getAll("targetUserIds"))
+        : []
+
+    if (audienceType === "users" && !targetUserIds.length) {
+      return null
+    }
+
+    return {
+      title: title || null,
+      message,
+      audienceType,
+      targetUserIds: audienceType === "users" ? targetUserIds : null,
+      audience: legacyFields.audience,
+      broadcastType: legacyFields.broadcastType,
+      duration: resolveLegacyDurationFromExpiryOption(expiryOption),
+      expiresAt: calculateBroadcastExpiration(expiryOption)?.toISOString() ?? null,
+    }
+  }
+
+  const audience = normalizeAudience(formData.get("audience") as string | null)
+  const broadcastType = normalizeBroadcastType(
+    ((formData.get("broadcastType") as string | null) ?? "investment")
+  )
+  const duration = normalizeDuration(formData.get("duration") as string | null)
+
+  return {
+    title: title || null,
+    message,
+    audienceType: null,
+    targetUserIds: null,
+    audience,
+    broadcastType,
+    duration,
+    expiresAt: calculateBroadcastExpiration(
+      duration === "week"
+        ? "1w"
+        : duration === "month"
+          ? "1m"
+          : duration === "year"
+            ? "1y"
+            : duration === "24h"
+              ? "24h"
+              : "none"
+    )?.toISOString() ?? null,
+  }
 }
 
 type UpdateUserAccessResult =
@@ -452,30 +531,24 @@ export async function deleteUserWithResult(userId: string): Promise<DeleteUserRe
 }
 
 export async function publishBroadcast(formData: FormData): Promise<void> {
-  const title = (formData.get("title") as string | null)?.trim() ?? ""
-  const message = (formData.get("message") as string | null)?.trim() ?? ""
-  const audience = normalizeAudience(formData.get("audience") as string | null)
-  const broadcastType = normalizeBroadcastType(
-    ((formData.get("broadcastType") as string | null) ?? "investment")
-  )
-  const duration = normalizeDuration(formData.get("duration") as string | null)
-
-  if (!message) return
+  const resolvedInput = resolveBroadcastInput(formData)
+  if (!resolvedInput) return
 
   const { supabase, isAdmin, userId } = await getCallerAccess()
 
   if (!isAdmin || !userId) return
 
   const db = supabase
-  const expiresAt = calculateExpiration(duration)
 
   const insertPayload = {
-    title: title || null,
-    message,
-    audience,
-    broadcast_type: broadcastType,
-    duration,
-    expires_at: expiresAt?.toISOString() ?? null,
+    title: resolvedInput.title,
+    message: resolvedInput.message,
+    audience: resolvedInput.audience,
+    audience_type: resolvedInput.audienceType,
+    target_user_ids: resolvedInput.targetUserIds,
+    broadcast_type: resolvedInput.broadcastType,
+    duration: resolvedInput.duration,
+    expires_at: resolvedInput.expiresAt,
     created_by: userId,
   }
 
@@ -484,21 +557,25 @@ export async function publishBroadcast(formData: FormData): Promise<void> {
   // Backward compatibility when created_by and/or broadcast_type are not present yet.
   if (error) {
     const { error: fallbackError } = await db.from("admin_broadcasts").insert({
-      title: title || null,
-      message,
-      audience,
-      broadcast_type: broadcastType,
-      duration,
-      expires_at: expiresAt?.toISOString() ?? null,
+      title: resolvedInput.title,
+      message: resolvedInput.message,
+      audience: resolvedInput.audience,
+      audience_type: resolvedInput.audienceType,
+      target_user_ids: resolvedInput.targetUserIds,
+      broadcast_type: resolvedInput.broadcastType,
+      duration: resolvedInput.duration,
+      expires_at: resolvedInput.expiresAt,
     })
 
     if (fallbackError) {
       await db.from("admin_broadcasts").insert({
-        title: title || null,
-        message,
-        audience,
-        duration,
-        expires_at: expiresAt?.toISOString() ?? null,
+        title: resolvedInput.title,
+        message: resolvedInput.message,
+        audience: resolvedInput.audience,
+        audience_type: resolvedInput.audienceType,
+        target_user_ids: resolvedInput.targetUserIds,
+        duration: resolvedInput.duration,
+        expires_at: resolvedInput.expiresAt,
       })
     }
   }
@@ -511,43 +588,39 @@ export async function publishQuickUpdate(formData: FormData): Promise<void> {
 
   proxyFormData.set("title", (formData.get("title") as string | null) ?? "")
   proxyFormData.set("message", (formData.get("message") as string | null) ?? "")
-  proxyFormData.set("audience", (formData.get("audience") as string | null) ?? "all")
-  proxyFormData.set(
-    "broadcastType",
-    (formData.get("broadcastType") as string | null) ?? "investment"
-  )
-  proxyFormData.set("duration", (formData.get("duration") as string | null) ?? "forever")
+  proxyFormData.set("audienceType", (formData.get("audienceType") as string | null) ?? "")
+  proxyFormData.set("expiryOption", (formData.get("expiryOption") as string | null) ?? "none")
+
+  for (const userId of formData.getAll("targetUserIds")) {
+    if (typeof userId !== "string") continue
+    proxyFormData.append("targetUserIds", userId)
+  }
 
   await publishBroadcast(proxyFormData)
 }
 
 export async function updateBroadcast(formData: FormData): Promise<void> {
   const broadcastId = (formData.get("broadcastId") as string | null)?.trim() ?? ""
-  const title = (formData.get("title") as string | null)?.trim() ?? ""
-  const message = (formData.get("message") as string | null)?.trim() ?? ""
-  const audience = normalizeAudience(formData.get("audience") as string | null)
-  const broadcastType = normalizeBroadcastType(
-    (formData.get("broadcastType") as string | null) ?? "investment"
-  )
-  const duration = normalizeDuration(formData.get("duration") as string | null)
+  const resolvedInput = resolveBroadcastInput(formData)
 
-  if (!broadcastId || !message) return
+  if (!broadcastId || !resolvedInput) return
 
   const { supabase, isAdmin } = await getCallerAccess()
   if (!isAdmin) return
 
   const db = supabase
-  const expiresAt = calculateExpiration(duration)?.toISOString() ?? null
 
   const { error } = await db
     .from("admin_broadcasts")
     .update({
-      title: title || null,
-      message,
-      audience,
-      broadcast_type: broadcastType,
-      duration,
-      expires_at: expiresAt,
+      title: resolvedInput.title,
+      message: resolvedInput.message,
+      audience: resolvedInput.audience,
+      audience_type: resolvedInput.audienceType,
+      target_user_ids: resolvedInput.targetUserIds,
+      broadcast_type: resolvedInput.broadcastType,
+      duration: resolvedInput.duration,
+      expires_at: resolvedInput.expiresAt,
     })
     .eq("id", broadcastId)
 
@@ -555,11 +628,13 @@ export async function updateBroadcast(formData: FormData): Promise<void> {
     const { error: fallbackError } = await db
       .from("admin_broadcasts")
       .update({
-        title: title || null,
-        message,
-        audience,
-        duration,
-        expires_at: expiresAt,
+        title: resolvedInput.title,
+        message: resolvedInput.message,
+        audience: resolvedInput.audience,
+        audience_type: resolvedInput.audienceType,
+        target_user_ids: resolvedInput.targetUserIds,
+        duration: resolvedInput.duration,
+        expires_at: resolvedInput.expiresAt,
       })
       .eq("id", broadcastId)
 
@@ -567,9 +642,11 @@ export async function updateBroadcast(formData: FormData): Promise<void> {
       await db
         .from("admin_broadcasts")
         .update({
-          title: title || null,
-          message,
-          audience,
+          title: resolvedInput.title,
+          message: resolvedInput.message,
+          audience: resolvedInput.audience,
+          audience_type: resolvedInput.audienceType,
+          target_user_ids: resolvedInput.targetUserIds,
         })
         .eq("id", broadcastId)
     }
@@ -727,6 +804,81 @@ export async function updateSubscriptionPlanPermissions(formData: FormData): Pro
     allowTrade,
     allowInvestment,
     tradeLimitPerWeek,
+  })
+}
+
+async function createPlan(params: {
+  name: string
+  description?: string | null
+  planType: "trader" | "investor" | "both"
+  allowTrade: boolean
+  allowInvestment: boolean
+  tradeLimitPerWeek: number
+}) {
+  const { supabase, isAdmin } = await getCallerAccess()
+
+  if (!isAdmin) return
+
+  const name = params.name.trim()
+  if (!name) return
+
+  const insertPayload = {
+    name,
+    description: params.description || null,
+    plan_type: params.planType,
+
+    allow_trade: params.allowTrade,
+    allow_investment: params.allowInvestment,
+    trade_limit_per_week: params.tradeLimitPerWeek,
+
+    is_public: true,
+    // is_active: true,
+  }
+
+  const { error } = await supabase
+    .from("subscription_plans")
+    .insert(insertPayload)
+
+  if (error) {
+    console.error("Create plan error:", error)
+  }
+
+  revalidateAdminRoutes()
+}
+
+export async function addPlan(formData: FormData): Promise<void> {
+  const name = (formData.get("name") as string | null)?.trim() ?? ""
+  const description = (formData.get("description") as string | null) ?? null
+
+  const allowTrade =
+    (formData.get("allowTrade") as string | null) === "true"
+
+  const allowInvestment =
+    (formData.get("allowInvestment") as string | null) === "true"
+
+  const tradeLimitRaw = formData.get("tradeLimit") as string | null
+  const tradeLimitPerWeek = tradeLimitRaw ? Number(tradeLimitRaw) : 0
+
+  if (!name) return
+
+  // derive planType from switches
+  let planType: "trader" | "investor" | "both"
+
+  if (allowTrade && allowInvestment) {
+    planType = "both"
+  } else if (allowInvestment) {
+    planType = "investor"
+  } else {
+    planType = "trader"
+  }
+
+  await createPlan({
+    name,
+    description,
+    planType,
+    tradeLimitPerWeek,
+    allowTrade,
+    allowInvestment,
   })
 }
 
