@@ -12,7 +12,6 @@ import {
 import { useState } from "react"
 import { addPlan } from "../actions"
 import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
 import LoadingSubmitButton from "@/components/ui/loading-submit-button"
 
 export function AddPlanDrawer() {
