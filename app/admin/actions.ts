@@ -807,6 +807,81 @@ export async function updateSubscriptionPlanPermissions(formData: FormData): Pro
   })
 }
 
+async function createPlan(params: {
+  name: string
+  description?: string | null
+  planType: "trader" | "investor" | "both"
+  allowTrade: boolean
+  allowInvestment: boolean
+  tradeLimitPerWeek: number
+}) {
+  const { supabase, isAdmin } = await getCallerAccess()
+
+  if (!isAdmin) return
+
+  const name = params.name.trim()
+  if (!name) return
+
+  const insertPayload = {
+    name,
+    description: params.description || null,
+    plan_type: params.planType,
+
+    allow_trade: params.allowTrade,
+    allow_investment: params.allowInvestment,
+    trade_limit_per_week: params.tradeLimitPerWeek,
+
+    is_public: true,
+    // is_active: true,
+  }
+
+  const { error } = await supabase
+    .from("subscription_plans")
+    .insert(insertPayload)
+
+  if (error) {
+    console.error("Create plan error:", error)
+  }
+
+  revalidateAdminRoutes()
+}
+
+export async function addPlan(formData: FormData): Promise<void> {
+  const name = (formData.get("name") as string | null)?.trim() ?? ""
+  const description = (formData.get("description") as string | null) ?? null
+
+  const allowTrade =
+    (formData.get("allowTrade") as string | null) === "true"
+
+  const allowInvestment =
+    (formData.get("allowInvestment") as string | null) === "true"
+
+  const tradeLimitRaw = formData.get("tradeLimit") as string | null
+  const tradeLimitPerWeek = tradeLimitRaw ? Number(tradeLimitRaw) : 0
+
+  if (!name) return
+
+  // derive planType from switches
+  let planType: "trader" | "investor" | "both" = "trader"
+
+  if (allowTrade && allowInvestment) {
+    planType = "both"
+  } else if (allowInvestment) {
+    planType = "investor"
+  } else {
+    planType = "trader"
+  }
+
+  await createPlan({
+    name,
+    description,
+    planType,
+    tradeLimitPerWeek,
+    allowTrade,
+    allowInvestment,
+  })
+}
+
 export async function updatePlan(formData: FormData): Promise<void> {
   const planId = (formData.get("planId") as string | null)?.trim() ?? ""
 
