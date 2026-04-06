@@ -21,7 +21,7 @@ export function AddPlanDrawer() {
   const [price, setPrice] = useState("")
   const [tradeLimit, setTradeLimit] = useState("0")
 
-  const [allowTrade, setAllowTrade] = useState(true)
+  const [allowTrade] = useState(true)
   const [allowInvestment, setAllowInvestment] = useState(true)
   const [isPublic, setIsPublic] = useState(true)
   const [isActive] = useState(true)
