@@ -862,7 +862,7 @@ export async function addPlan(formData: FormData): Promise<void> {
   if (!name) return
 
   // derive planType from switches
-  let planType: "trader" | "investor" | "both" = "trader"
+  let planType: "trader" | "investor" | "both"
 
   if (allowTrade && allowInvestment) {
     planType = "both"

@@ -12,7 +12,6 @@ import {
 import { useState } from "react"
 import { addPlan } from "../actions"
 import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
 import LoadingSubmitButton from "@/components/ui/loading-submit-button"
 
 export function AddPlanDrawer() {
@@ -22,10 +21,10 @@ export function AddPlanDrawer() {
   const [price, setPrice] = useState("")
   const [tradeLimit, setTradeLimit] = useState("0")
 
-  const [allowTrade, setAllowTrade] = useState(true)
+  const [allowTrade] = useState(true)
   const [allowInvestment, setAllowInvestment] = useState(true)
   const [isPublic, setIsPublic] = useState(true)
-  const [isActive, setIsActive] = useState(true)
+  const [isActive] = useState(true)
 
   return (
     <Drawer>
