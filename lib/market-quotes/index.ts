@@ -1,13 +1,6 @@
-import { NextResponse } from "next/server"
-
-export const revalidate = 0
-
 const MAX_TOTAL_SYMBOLS = 24
 const SYMBOL_PATTERN = /^[A-Za-z0-9^.\-=&]+$/
-const SUPABASE_MARKET_QUOTES_URL = process.env.SUPABASE_MARKET_QUOTES_URL?.trim() ?? ""
-const SUPABASE_MARKET_QUOTES_KEY = process.env.SUPABASE_MARKET_QUOTES_KEY?.trim() ?? ""
 
-/** Yahoo often returns 401 to server-side v7 quote calls; v8 chart still works with browser-like headers. */
 const YAHOO_HEADERS: HeadersInit = {
   Accept: "application/json,text/plain,*/*",
   "Accept-Language": "en-US,en;q=0.9",
@@ -64,62 +57,9 @@ async function fetchWithTimeout(url: string, timeoutMs = 4500) {
 
   try {
     return await fetch(url, {
-      cache: "no-store",
       headers: YAHOO_HEADERS,
       signal: controller.signal,
     })
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-async function fetchSupabaseQuotes(symbols: string[]) {
-  if (!SUPABASE_MARKET_QUOTES_URL || !SUPABASE_MARKET_QUOTES_KEY) {
-    return null
-  }
-
-  const endpoint = new URL(SUPABASE_MARKET_QUOTES_URL)
-  endpoint.searchParams.set("symbols", symbols.join(","))
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 4500)
-
-  try {
-    const response = await fetch(endpoint.toString(), {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${SUPABASE_MARKET_QUOTES_KEY}`,
-        apikey: SUPABASE_MARKET_QUOTES_KEY,
-      },
-      signal: controller.signal,
-    })
-
-    const payload = (await response.json().catch(() => null)) as {
-      symbols?: string[]
-      quotes?: {
-        symbol: string
-        shortName: string | null
-        regularMarketPrice: number | null
-        regularMarketChange: number | null
-        regularMarketChangePercent: number | null
-        regularMarketTime: number | null
-        marketState: string | null
-        currency: string | null
-      }[]
-      error?: string
-    } | null
-
-    if (!response.ok || !payload?.quotes) {
-      return null
-    }
-
-    return {
-      symbols: payload.symbols ?? symbols,
-      quotes: payload.quotes,
-      error: payload.error,
-    }
-  } catch {
-    return null
   } finally {
     clearTimeout(timer)
   }
@@ -232,60 +172,39 @@ async function fetchQuoteViaV8Chart(symbol: string) {
   return null
 }
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const symbols = extractSymbols(searchParams.get("symbols"))
+// Deno.serve(async (request) => {
+//   const url = new URL(request.url)
+//   const symbols = extractSymbols(url.searchParams.get("symbols"))
 
-  if (!symbols.length) {
-    return NextResponse.json({
-      symbols: [],
-      quotes: [],
-    })
-  }
+//   if (!symbols.length) {
+//     return Response.json({ symbols: [], quotes: [] })
+//   }
 
-  const encodedSymbols = encodeURIComponent(symbols.join(","))
+//   const encodedSymbols = encodeURIComponent(symbols.join(","))
 
-  try {
-    const supabaseResult = await fetchSupabaseQuotes(symbols)
-    if (supabaseResult && supabaseResult.quotes.length > 0) {
-      return NextResponse.json(supabaseResult)
-    }
+//   try {
+//     const v7Quotes = await fetchQuotesViaV7Batch(encodedSymbols)
+//     if (v7Quotes && v7Quotes.length >= symbols.length) {
+//       return Response.json({ symbols, quotes: v7Quotes })
+//     }
 
-    const v7Quotes = await fetchQuotesViaV7Batch(encodedSymbols)
-    if (v7Quotes && v7Quotes.length >= symbols.length) {
-      return NextResponse.json({
-        symbols,
-        quotes: v7Quotes,
-      })
-    }
+//     const chartResults = await Promise.all(symbols.map((symbol) => fetchQuoteViaV8Chart(symbol)))
+//     const quotes = chartResults.filter((row): row is NonNullable<typeof row> => row !== null)
 
-    const chartResults = await Promise.all(
-      symbols.map((symbol) => fetchQuoteViaV8Chart(symbol))
-    )
+//     if (quotes.length > 0) {
+//       return Response.json({ symbols, quotes })
+//     }
 
-    const quotes = chartResults.filter(
-      (row): row is NonNullable<typeof row> => row !== null
-    )
-
-    if (quotes.length > 0) {
-      return NextResponse.json({
-        symbols,
-        quotes,
-      })
-    }
-
-    return NextResponse.json({
-      symbols,
-      quotes: [],
-      error: "Live quote provider request failed.",
-    })
-  } catch {
-    return NextResponse.json(
-      {
-        symbols,
-        quotes: [],
-        error: "Unable to fetch live quotes right now.",
-      }
-    )
-  }
-}
+//     return Response.json({
+//       symbols,
+//       quotes: [],
+//       error: "Live quote provider request failed.",
+//     })
+//   } catch {
+//     return Response.json({
+//       symbols,
+//       quotes: [],
+//       error: "Unable to fetch live quotes right now.",
+//     })
+//   }
+// })

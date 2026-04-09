@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type { MarketSymbolOption } from "@/lib/market-symbols"
 
-const POLL_INTERVAL_MS = 8_000
+const FOREGROUND_POLL_INTERVAL_MS = 10_000
+const BACKGROUND_POLL_INTERVAL_MS = 30_000
+const ERROR_POLL_INTERVAL_MS = 45_000
 const SYMBOL_PATTERN = /^[A-Za-z0-9^.\-=&]+$/
 
 type QuoteRow = {
@@ -70,6 +72,43 @@ function formatUpdatedAt(unixSeconds: number | null) {
   }).format(parsed)
 }
 
+function formatDelay(unixSeconds: number | null) {
+  if (typeof unixSeconds !== "number") return null
+  const delaySeconds = Math.max(0, Math.floor(Date.now() / 1000) - unixSeconds)
+  const delayMinutes = Math.floor(delaySeconds / 60)
+  if (delayMinutes <= 0) return "near real-time"
+  if (delayMinutes === 1) return "1 min delayed"
+  return `${delayMinutes} min delayed`
+}
+
+function formatUpdateDate(unixSeconds: number | null) {
+  if (typeof unixSeconds !== "number") return "--"
+  const parsed = new Date(unixSeconds * 1000)
+  if (Number.isNaN(parsed.getTime())) return "--"
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(parsed)
+}
+
+function formatUpdateTime(unixSeconds: number | null) {
+  if (typeof unixSeconds !== "number") return "--"
+  const parsed = new Date(unixSeconds * 1000)
+  if (Number.isNaN(parsed.getTime())) return "--"
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed)
+}
+
+function formatDelayMinutes(unixSeconds: number | null) {
+  if (typeof unixSeconds !== "number") return "--"
+  const delaySeconds = Math.max(0, Math.floor(Date.now() / 1000) - unixSeconds)
+  return `${Math.floor(delaySeconds / 60)} min`
+}
+
 export default function LiveMarketBoard({
   availableSymbols,
 }: {
@@ -78,6 +117,7 @@ export default function LiveMarketBoard({
   const [dataError, setDataError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
+  const [errorStreak, setErrorStreak] = useState(0)
 
   const selectedSymbols = useMemo(() => {
     const seen = new Set<string>()
@@ -133,37 +173,56 @@ export default function LiveMarketBoard({
 
         if (!response.ok) {
           setDataError(payload.error ?? "Unable to load live quote data.")
+          setErrorStreak((current) => current + 1)
           return
         }
 
         setQuotes(payload.quotes ?? [])
         setDataError(payload.error ?? null)
+        setErrorStreak(0)
       } catch {
         if (!isMounted) return
         setDataError("Unable to load live quote data right now.")
+        setErrorStreak((current) => current + 1)
       } finally {
         if (isMounted) setLoading(false)
       }
     }
 
-    void loadQuotes(true)
-    const timer = window.setInterval(() => {
-      void loadQuotes(false)
-    }, POLL_INTERVAL_MS)
+    let timer: number | null = null
+    const scheduleNextPoll = () => {
+      if (!isMounted) return
+      const isTabVisible = document.visibilityState === "visible"
+      const nextInterval = errorStreak > 0
+        ? ERROR_POLL_INTERVAL_MS
+        : isTabVisible
+          ? FOREGROUND_POLL_INTERVAL_MS
+          : BACKGROUND_POLL_INTERVAL_MS
+
+      timer = window.setTimeout(async () => {
+        await loadQuotes(false)
+        scheduleNextPoll()
+      }, nextInterval)
+    }
+
+    void loadQuotes(true).then(() => {
+      scheduleNextPoll()
+    })
 
     return () => {
       isMounted = false
-      window.clearInterval(timer)
+      if (timer !== null) {
+        window.clearTimeout(timer)
+      }
     }
-  }, [selectedSymbols])
+  }, [errorStreak, selectedSymbols])
 
   return (
     <Card>
       <CardHeader className="space-y-2">
         <CardTitle className="text-base">Live market update</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Market symbols below come directly from your active Supabase market
-          configuration and refresh every few seconds.
+          Data is not live and is updated every 30 seconds. Please look up on the exchange for the latest price.
         </p>
       </CardHeader>
 
@@ -180,41 +239,77 @@ export default function LiveMarketBoard({
           </p>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 lg:grid-cols-2">
           {selectedSymbols.map((symbol) => {
             const quote = quoteBySymbol[symbol]
             const change = quote?.regularMarketChange ?? null
             const isPositive = typeof change === "number" && change > 0
             const isNegative = typeof change === "number" && change < 0
+            const showName = (labelBySymbol[symbol] ?? quote?.shortName ?? symbol).toUpperCase()
 
             return (
               <article
                 key={symbol}
-                className="rounded-lg border border-border/70 bg-muted/20 p-4"
+                className="overflow-hidden rounded-3xl bg-[#1f3761] text-white shadow-md"
               >
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {symbol}
-                </p>
-                <h3 className="mt-1 text-sm font-semibold">
-                  {labelBySymbol[symbol] ?? quote?.shortName ?? symbol}
-                </h3>
-                <p className="mt-3 text-lg font-semibold">
-                  {formatPrice(quote?.regularMarketPrice ?? null, quote?.currency ?? "INR")}
-                </p>
-                <p
-                  className={cn(
-                    "mt-1 text-sm font-medium",
-                    isPositive && "text-emerald-600",
-                    isNegative && "text-red-600",
-                    !isPositive && !isNegative && "text-muted-foreground"
-                  )}
-                >
-                  {formatSigned(quote?.regularMarketChange ?? null)} (
-                  {formatSigned(quote?.regularMarketChangePercent ?? null)}%)
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {quote ? formatUpdatedAt(quote.regularMarketTime) : "Waiting for live data..."}
-                </p>
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    {/* <div className="grid h-20 w-20 shrink-0 grid-cols-2 overflow-hidden rounded-2xl bg-white p-3 sm:h-24 sm:w-24">
+                    </div> */}
+                    <h3 className="mt-1 truncate text-2xl font-extrabold  sm:text-3xl">
+                      {showName}
+                    </h3>
+
+                    <div>
+                      {/* <p className="text-xs tracking-[0.2em] text-blue-100/80">{symbol}</p> */}
+                      <p className="mt-1 justify-end text-lg text-right font-extrabold sm:text-xl">
+                        {formatPrice(quote?.regularMarketPrice ?? null, quote?.currency ?? "INR")}
+                      </p>
+                      <p
+                        className={cn(
+                          "mt-1 text-xs sm:text-base font-bold",
+                          isPositive && "text-emerald-300",
+                          isNegative && "text-rose-300",
+                          !isPositive && !isNegative && "text-blue-100"
+                        )}
+                      >
+                        {formatSigned(quote?.regularMarketChange ?? null)} (
+                        {formatSigned(quote?.regularMarketChangePercent ?? null)}%)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* <div className="mt-6 grid grid-cols-2 divide-x divide-white/25 rounded-2xl border border-white/20 bg-white/5">
+                    <div className="p-4 text-center">
+                      <p className="text-xs uppercase tracking-[0.2em] text-blue-100/80">
+                        Updated
+                      </p>
+                      <p className="mt-2 text-lg font-extrabold sm:text-2xl">
+                        {formatUpdateDate(quote?.regularMarketTime ?? null)}
+                      </p>
+                      
+                    </div>
+                    <div className="p-4 text-center">
+                      <p className="text-xs uppercase tracking-[0.2em] text-blue-100/80">
+                        Delay
+                      </p>
+                      <p className="mt-2 text-3xl font-extrabold sm:text-4xl">
+                        {formatDelayMinutes(quote?.regularMarketTime ?? null)}
+                      </p>
+                      
+                    </div>
+                  </div> */}
+
+                  <div className="flex justify-between items-center">
+                  <p className="text-xs text-blue-100/80">
+                    {quote ? formatUpdatedAt(quote.regularMarketTime) : "Waiting for live data..."}
+                  </p>
+                  <p className="text-xs text-blue-100/80">
+                    {formatDelay(quote?.regularMarketTime ?? null) ?? "Waiting for live data..."}
+                  </p>
+                  </div>
+                  
+                </div>
               </article>
             )
           })}
@@ -226,9 +321,14 @@ export default function LiveMarketBoard({
           </p>
         ) : null}
 
+        <div className="flex flex-wrap justify-between items-center">
         <p className="text-xs text-muted-foreground">
           Cards source: Yahoo public quote feed via server API.
         </p>
+        <p className="text-xs text-muted-foreground">
+          Polling: 10s active tab, 30s in background, 45s on provider errors.
+        </p>
+        </div>
       </CardContent>
     </Card>
   )

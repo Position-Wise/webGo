@@ -6,10 +6,12 @@ import DashboardTabView, {
 } from "@/components/dashboard/dashboard-tab-view"
 import AskAdminDialog from "@/components/inquiries/ask-admin-dialog"
 import LiveMarketBoard from "@/components/dashboard/live-market-board"
+import { MANDATORY_MARKET_OPTIONS } from "@/lib/market-symbols"
 import { getCurrentUserAccessState } from "@/lib/subscription-access"
 import { getAccessStateLabel } from "@/lib/subscription-status"
 import {
   isBroadcastExpired,
+  isBroadcastExpiredWithFallback,
   normalizeBroadcastType,
   normalizePlanAudienceKey,
   resolveDashboardBroadcastPlacement,
@@ -43,6 +45,7 @@ type BroadcastRow = {
     }[]
     | null
   expires_at?: string | null
+  duration?: string | null
   created_at: string | null
 }
 
@@ -60,6 +63,13 @@ type MarketSymbolRow = {
   symbol?: string | null
   display_name?: string | null
 }
+
+const FALLBACK_MARKET_OPTIONS = [
+  { symbol: "GC=F", label: "Gold Futures" },
+  { symbol: "SI=F", label: "Silver Futures" },
+  { symbol: "CL=F", label: "Crude Oil" },
+  { symbol: "INR=X", label: "USD/INR" },
+]
 
 const PLAN_FEATURES_SELECT = "id,name,allow_trade,allow_investment,trade_limit_per_week"
 
@@ -148,6 +158,7 @@ export default async function DashboardPage() {
       broadcast_type,
       created_by,
       expires_at,
+      duration,
       created_at,
       profiles:created_by (
         full_name
@@ -173,6 +184,7 @@ export default async function DashboardPage() {
             target_user_ids,
             broadcast_type,
             expires_at,
+            duration,
             created_at
           `
         )
@@ -186,7 +198,16 @@ export default async function DashboardPage() {
 
   for (const row of (broadcastRows as BroadcastRow[] | null) ?? []) {
     if (!row.message) continue
-    if (!access.isAdmin && isBroadcastExpired(row.expires_at)) continue
+    if (
+      !access.isAdmin &&
+      isBroadcastExpiredWithFallback({
+        expiresAt: row.expires_at,
+        duration: row.duration,
+        createdAt: row.created_at,
+      })
+    ) {
+      continue
+    }
 
     const placement = resolveDashboardBroadcastPlacement({
       audience: row.audience,
@@ -278,12 +299,26 @@ export default async function DashboardPage() {
     .order("sort_order", { ascending: true })
     .order("display_name", { ascending: true })
 
-  const availableSymbols = ((marketSymbolRows as MarketSymbolRow[] | null) ?? [])
+  const dbConfiguredSymbols = ((marketSymbolRows as MarketSymbolRow[] | null) ?? [])
     .map((row) => ({
       symbol: (row.symbol ?? "").trim().toUpperCase(),
       label: (row.display_name ?? row.symbol ?? "").trim(),
     }))
     .filter((row) => row.symbol.length > 0)
+
+  const availableSymbols = Array.from(
+    new Map(
+      [...dbConfiguredSymbols, ...MANDATORY_MARKET_OPTIONS, ...FALLBACK_MARKET_OPTIONS].map(
+        (option) => [
+          option.symbol,
+          {
+            symbol: option.symbol,
+            label: option.label.trim() || option.symbol,
+          },
+        ]
+      )
+    ).values()
+  )
 
   return (
     <main className="min-h-screen bg-background text-foreground pt-24 pb-20 px-6">
@@ -305,16 +340,7 @@ export default async function DashboardPage() {
           <AskAdminDialog />
         </div>
 
-        <div className="grid gap-4 rounded-xl border border-border bg-card p-6 sm:grid-cols-3">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Email
-            </p>
-            <p className="mt-1 text-sm font-medium">
-              {user.email}
-            </p>
-          </div>
-
+        <div className="grid gap-4 rounded-xl border border-border bg-card p-6 sm:grid-cols-2 text-center">
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Membership tier
