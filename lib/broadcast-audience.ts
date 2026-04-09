@@ -165,6 +165,66 @@ export function isBroadcastExpired(
   return parsed.getTime() <= now.getTime()
 }
 
+function calculateLegacyExpiryFromDuration(
+  duration: string | null | undefined,
+  createdAt: string | null | undefined
+) {
+  const normalizedDuration = normalizeKey(duration)
+  if (
+    normalizedDuration === "forever" ||
+    normalizedDuration === "none" ||
+    !normalizedDuration
+  ) {
+    return null
+  }
+
+  const createdDate = new Date(createdAt ?? "")
+  if (Number.isNaN(createdDate.getTime())) {
+    return null
+  }
+
+  const expiresAt = new Date(createdDate)
+  if (normalizedDuration === "24h") {
+    expiresAt.setHours(expiresAt.getHours() + 24)
+    return expiresAt
+  }
+  if (normalizedDuration === "week") {
+    expiresAt.setDate(expiresAt.getDate() + 7)
+    return expiresAt
+  }
+  if (normalizedDuration === "month") {
+    expiresAt.setMonth(expiresAt.getMonth() + 1)
+    return expiresAt
+  }
+  if (normalizedDuration === "year") {
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1)
+    return expiresAt
+  }
+
+  return null
+}
+
+export function isBroadcastExpiredWithFallback(params: {
+  expiresAt: string | null | undefined
+  duration: string | null | undefined
+  createdAt: string | null | undefined
+  now?: Date
+}) {
+  const now = params.now ?? new Date()
+
+  if (isBroadcastExpired(params.expiresAt, now)) {
+    return true
+  }
+
+  const legacyExpiry = calculateLegacyExpiryFromDuration(
+    params.duration,
+    params.createdAt
+  )
+  if (!legacyExpiry) return false
+
+  return legacyExpiry.getTime() <= now.getTime()
+}
+
 export function normalizePlanAudienceKey(value: string | null | undefined) {
   const normalized = normalizeKey(value)
 
